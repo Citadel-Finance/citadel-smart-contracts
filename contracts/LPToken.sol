@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./IBEP20.sol";
 
-contract CTLToken is IBEP20, Ownable {
+contract LPToken is IBEP20, Ownable {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
@@ -21,15 +21,13 @@ contract CTLToken is IBEP20, Ownable {
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        uint256 totalSupply_
+        address owner_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        _totalSupply = totalSupply_;
-        _balances[msg.sender] = _totalSupply;
-
-        emit Transfer(address(0), msg.sender, _totalSupply);
+        _totalSupply = 0;
+        transferOwnership(owner_);
     }
 
     /**
@@ -145,12 +143,11 @@ contract CTLToken is IBEP20, Ownable {
         address recipient,
         uint256 amount
     ) public virtual override returns (bool) {
-        require(recipient == _msgSender(), "Recipient is not contract caller");
         _transfer(sender, recipient, amount);
         _approve(
             sender,
-            recipient,
-            _allowances[sender][recipient].sub(
+            _msgSender(),
+            _allowances[sender][_msgSender()].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
             )

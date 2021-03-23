@@ -2,6 +2,7 @@
 pragma solidity ^0.7.0;
 
 import "./IBEP20.sol";
+import "./ILPToken.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
@@ -9,7 +10,7 @@ contract CitadelPool is AccessControl {
     using SafeMath for uint256;
 
     struct LiquidityPool {
-        uint256 receipt_profit;
+        uint256 receipt_profit; //Profit per day
         uint256 total_profit;
         uint256 tps_amount; //Tokens per staked amount
         uint256 prev_tps_amount; //Tokens per staked amount for previously day
@@ -28,12 +29,41 @@ contract CitadelPool is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER");
 
-    address private lp_token; //LP-token address
-    uint256 private start_time; //Deploy timestamp
-    uint256 private cur_day; //Current day from start time
-    mapping(address => bool) private token_whitelist; //Enabled tokens
+    ILPToken public lp_token; //LP-token address
+    uint256 public start_time; //Deploy timestamp
+    uint256 public cur_day; //Current day from start time
+    mapping(address => bool) token_whitelist; //Enabled tokens
     mapping(address => LiquidityPool) liquidity_pool;
-    mapping(address => mapping(address => Stake)) private user_stacked; //Balance per accounts
+    mapping(address => mapping(address => Stake)) user_stacked; //Balance per accounts
+
+    event Deposited(
+        address indexed _depositor,
+        address indexed _token,
+        uint256 _amount,
+        uint256 _mintAmount
+    );
+    event Withdrew(
+        address indexed _reciever,
+        address indexed _token,
+        uint256 _amount
+    );
+    event Borrowed(
+        address indexed _borrower,
+        address indexed _token,
+        uint256 _amount,
+        uint256 _fee
+    );
+    event Profited(
+        address indexed _borrower,
+        address indexed token,
+        uint256 amount
+    );
+    event Rewarded(
+        address indexed _borrower,
+        address indexed token,
+        uint256 amount
+    );
+
 
     constructor() {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -43,27 +73,34 @@ contract CitadelPool is AccessControl {
         cur_day = 0;
     }
 
-    function update_whitelist(address token, bool enabled)
-        public
-        returns (bool)
-    {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not a admin");
-        token_whitelist[token] = enabled;
+    function get_token_whitelist(address token) public view returns (bool) {
         return token_whitelist[token];
     }
 
-    function check_white_list(address token) public view returns (bool) {
-        return token_whitelist[token];
+    function get_total_stacked(address token) public view returns (uint256) {
+        return liquidity_pool[token].total_stacked;
     }
 
-    function set_lp_token(address token) public returns (address) {
+    function get_account_stacked(address token) public view returns (uint256) {
+        return user_stacked[token][msg.sender].total_stacked;
+    }
+
+    function get_available_reward(address token) public view returns (uint256) {
+        return user_stacked[token][msg.sender].available_reward;
+    }
+
+    function set_lp_token(address token) public {
         require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not a admin");
         require(token != address(0), "Token address is invalid");
-        lp_token = token;
-        return lp_token;
+        lp_token = ILPToken(token);
     }
 
-    function stake(address token, uint256 amount) public returns (bool) {
+    function update_whitelist(address token, bool enabled) public {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not a admin");
+        token_whitelist[token] = enabled;
+    }
+
+    function deposit(address token, uint256 amount) public {
         require(token != address(0), "Token is invalid");
         require(token_whitelist[token] == true, "Token is not enabled");
         require(amount > 0, "Amount is invalid");
@@ -80,23 +117,27 @@ contract CitadelPool is AccessControl {
         add_missed_profit(st, amount.mul(p.prev_tps_amount).div(1e18));
         calc_available_reward(st, p.tps_amount);
 
-        //IBEP20(lp_token).transfer(msg.sender, lp_token_amount);
-        return true;
+        //Mint missed amount of lp-tokens
+        uint256 lp_balance = lp_token.balanceOf(address(this));
+        if (lp_balance < amount) {
+            lp_token.mint(amount.sub(lp_balance));
+        }
+        lp_token.transfer(msg.sender, amount);
+        emit Deposited(msg.sender, token, amount, amount);
     }
 
-    function unstake(address token, uint256 amount) public returns (bool) {
+    function withdraw(address token, uint256 amount) public {
         require(token != address(0), "Token is invalid");
         require(token_whitelist[token] == true, "Token is not enabled");
         require(
-            get_account_stacked(token) >= amount && amount > 0,
+            user_stacked[token][msg.sender].total_stacked >= amount &&
+                amount > 0,
             "Amount is invalid"
         );
-
-        //require(
-        //    IBEP20(lp_token).transferFrom(msg.sender, address(this), lp_token_amount),
-        //    "Unable to transfer specified amount of LP tokens"
-        //);
-
+        require(
+            lp_token.transferFrom(msg.sender, address(this), amount),
+            "Unable to transfer specified amount of LP tokens"
+        );
         require(
             IBEP20(token).transfer(msg.sender, amount),
             "Unable to transfer specified amount of staking tokens"
@@ -104,23 +145,15 @@ contract CitadelPool is AccessControl {
 
         LiquidityPool storage p = liquidity_pool[token];
         Stake storage st = user_stacked[token][msg.sender];
-
         p.total_stacked = p.total_stacked.sub(amount);
         st.total_stacked = st.total_stacked.sub(amount);
         sub_missed_profit(st, amount.mul(p.prev_tps_amount).div(1e18));
         calc_available_reward(st, p.tps_amount);
-        return true;
+
+        emit Withdrew(msg.sender, token, amount);
     }
 
-    function get_total_stacked(address token) public view returns (uint256) {
-        return liquidity_pool[token].total_stacked;
-    }
-
-    function get_account_stacked(address token) public view returns (uint256) {
-        return user_stacked[token][msg.sender].total_stacked;
-    }
-
-    function add_profit(address token, uint256 amount) public returns (bool) {
+    function add_profit(address token, uint256 amount) public {
         require(token_whitelist[token] == true, "Token is not enabled");
         //Receipt profit set in zero every day
         LiquidityPool storage p = liquidity_pool[token];
@@ -135,10 +168,10 @@ contract CitadelPool is AccessControl {
         p.tps_amount = p.tps_amount.add(
             p.receipt_profit.mul(1e18).div(p.total_stacked)
         );
-        return true;
+        emit Profited(msg.sender, token, amount);
     }
 
-    function claim_reward(address token, uint256 amount) public returns (bool) {
+    function claim_reward(address token, uint256 amount) public {
         require(token_whitelist[token] == true, "Token is not enabled");
         Stake storage st = user_stacked[token][msg.sender];
         require(
@@ -147,7 +180,7 @@ contract CitadelPool is AccessControl {
         );
         st.claimed_reward = st.claimed_reward.add(amount);
         calc_available_reward(st, liquidity_pool[token].tps_amount);
-        return true;
+        emit Rewarded(msg.sender, token, amount);
     }
 
     function sub_missed_profit(Stake storage st, uint256 amount) internal {

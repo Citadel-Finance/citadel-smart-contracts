@@ -8,6 +8,9 @@ const privkey = fs.readFileSync(".secret").toString().trim();
 module.exports = {
   defaultNetwork: "bsc_test",
   networks: {
+    ganache: {
+      url: "http://127.0.0.1:8545",
+    },
     development: {
       url: "http://127.0.0.1:8545",
       //from: "0749c6397aa953755a2a5904d2a0a29a99b2df8b",
