@@ -4,12 +4,11 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./IBEP20.sol";
-import "./ICitadelPool.sol";
+import "./interface/IBEP20.sol";
+import "./interface/ICitadelPool.sol";
+
 contract LPToken is IBEP20, Ownable {
     using SafeMath for uint256;
-
-    ICitadelPool lp_pool;
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -22,13 +21,13 @@ contract LPToken is IBEP20, Ownable {
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        address pool_
+        address lp_pool_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
         _totalSupply = 0;
-        lp_pool = ICitadelPool(pool_);
+        transferOwnership(lp_pool_);
     }
 
     /**
@@ -94,7 +93,9 @@ contract LPToken is IBEP20, Ownable {
         returns (bool)
     {
         _transfer(_msgSender(), recipient, amount);
-        lp_pool.transfer_lp(_msgSender(), recipient, amount);
+        if (_msgSender() != owner()) {
+            ICitadelPool(owner()).transfer_lp(_msgSender(), recipient, amount);
+        }
         return true;
     }
 
@@ -145,15 +146,20 @@ contract LPToken is IBEP20, Ownable {
         address recipient,
         uint256 amount
     ) public virtual override returns (bool) {
+        require(recipient == _msgSender(), "Recipient is not contract caller");
         _transfer(sender, recipient, amount);
         _approve(
             sender,
-            _msgSender(),
-            _allowances[sender][_msgSender()].sub(
+            recipient,
+            _allowances[sender][recipient].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
             )
         );
+
+        if (_msgSender() != owner()) {
+            ICitadelPool(owner()).transfer_lp(sender, recipient, amount);
+        }
         return true;
     }
 
