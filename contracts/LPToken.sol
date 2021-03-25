@@ -5,13 +5,14 @@ pragma solidity ^0.7.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./IBEP20.sol";
-
+import "./ICitadelPool.sol";
 contract LPToken is IBEP20, Ownable {
     using SafeMath for uint256;
 
+    ICitadelPool lp_pool;
+
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
-
     uint256 private _totalSupply;
     uint256 private _decimals;
     string private _symbol;
@@ -21,13 +22,13 @@ contract LPToken is IBEP20, Ownable {
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        address owner_
+        address pool_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
         _totalSupply = 0;
-        transferOwnership(owner_);
+        lp_pool = ICitadelPool(pool_);
     }
 
     /**
@@ -93,6 +94,7 @@ contract LPToken is IBEP20, Ownable {
         returns (bool)
     {
         _transfer(_msgSender(), recipient, amount);
+        lp_pool.transfer_lp(_msgSender(), recipient, amount);
         return true;
     }
 

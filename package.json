@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    
     "ganache-cli": "ganache-cli --allowUnlimitedContractSize",
     "compile": "npx hardhat compile",
     "test": "npx hardhat --network development test",
@@ -26,6 +25,7 @@
     "ethereum-waffle": "^3.3.0",
     "ethers": "^5.0.32",
     "hardhat": "^2.1.1",
+    "hardhat-waffle": "0.0.1-security",
     "mocha": "^8.3.2"
   },
   "dependencies": {
