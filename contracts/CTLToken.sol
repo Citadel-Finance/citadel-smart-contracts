@@ -4,7 +4,7 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./interface/IBEP20.sol";
+import "./interfaces/IBEP20.sol";
 
 contract CTLToken is IBEP20, Ownable {
     using SafeMath for uint256;

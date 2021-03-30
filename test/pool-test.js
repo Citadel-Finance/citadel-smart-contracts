@@ -4,7 +4,7 @@ const { expect, assert } = require("chai");
 const { ethers, waffle } = require("hardhat");
 require("@nomiclabs/hardhat-waffle");
 
-
+const nullstr = "0x0000000000000000000000000000000000000000"
 let outside_token_owner;
 let lp_pool_owner;
 let lp_token_owner;
@@ -48,7 +48,7 @@ describe("Liquidity pool contract", () => {
 
     it("Tokens whitelist may be set only admin", async () => {
       try {
-        await lp_pool.connect(outside_token_owner.address).update_whitelist(outside_token.address, true);
+        await lp_pool.connect(outside_token_owner.address).updateWhitelist(outside_token.address, true);
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Caller is not a admin')
@@ -56,13 +56,13 @@ describe("Liquidity pool contract", () => {
     });
 
     it("Add token to whitelist", async () => {
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, true);
-      var lp_token_address = await lp_pool.connect(lp_pool_owner).get_token_whitelist(outside_token.address);
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
+      var lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
 
       await expect(lp_token_address).to.be.properAddress;
 
       await expect(
-        await lp_pool.connect(lp_pool_owner).get_reversed_whitelist(lp_token_address)
+        await lp_pool.connect(lp_pool_owner).reversedWhitelist(lp_token_address)
       ).to.be.equal(outside_token.address);
 
       const lp_token = await LPToken.attach(lp_token_address);
@@ -78,33 +78,33 @@ describe("Liquidity pool contract", () => {
 
     it("Disable token in whitelist ", async () => {
       //Add token
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, true);
-      var lp_token_address = await lp_pool.connect(lp_pool_owner).get_token_whitelist(outside_token.address);
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
+      var lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
       await expect(lp_token_address).to.be.properAddress;
       await expect(
-        await lp_pool.connect(lp_pool_owner).get_reversed_whitelist(lp_token_address)
+        await lp_pool.connect(lp_pool_owner).reversedWhitelist(lp_token_address)
       ).to.be.equal(outside_token.address);
 
       //Disable token
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, false);
-      lp_token_address = await lp_pool.connect(lp_pool_owner).get_token_whitelist(outside_token.address);
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, false);
+      lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
       await expect(lp_token_address).to.be.properAddress;
-      await expect(lp_token_address).to.be.equal("0x0000000000000000000000000000000000000000");
+      await expect(lp_token_address).to.be.equal(nullstr);
     });
   });
 
   describe("Stake", () => {
-    it("Deposit invalid token", async () => {
+    it("Deposit invalid token fail", async () => {
       try {
-        await lp_pool.connect(outside_token_owner).deposit("0x0000000000000000000000000000000000000000", 100);
+        await lp_pool.connect(outside_token_owner).deposit(nullstr, 100);
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Token is invalid')
       }
     });
 
-    it("Deposit disabled token", async () => {
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, false);
+    it("Deposit disabled token fail", async () => {
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, false);
       try {
         await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 100);
       }
@@ -113,8 +113,8 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit invalid amount of tokens", async () => {
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, true);
+    it("Deposit invalid amount of token", async () => {
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
       try {
         await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 0);
       }
@@ -123,9 +123,9 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit not approved tokens", async () => {
+    it("Deposit not approved token", async () => {
       //LP-pool settings
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, true);
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
 
       try {
         await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 100);
@@ -137,7 +137,7 @@ describe("Liquidity pool contract", () => {
 
     it("Deposit liquidity", async () => {
       //LP-pool settings
-      await lp_pool.connect(lp_pool_owner).update_whitelist(outside_token.address, true);
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
 
       //Approve for transfer outside token to LP-pool
       await outside_token.connect(outside_token_owner).approve(lp_pool.address, 100);
@@ -147,16 +147,16 @@ describe("Liquidity pool contract", () => {
 
       //Check staked
       await expect(
-        await lp_pool.connect(outside_token_owner).get_account_stacked(outside_token.address)
+        await lp_pool.connect(outside_token_owner).accountStacked(outside_token.address)
       ).to.be.equal(100);
       await expect(
-        await lp_pool.connect(outside_token_owner).get_total_stacked(outside_token.address)
+        await lp_pool.connect(outside_token_owner).totalStacked(outside_token.address)
       ).to.be.equal(100);
       await expect(
-        await lp_pool.connect(outside_token_owner).get_missed_profit(outside_token.address)
+        await lp_pool.connect(outside_token_owner).missedProfit(outside_token.address)
       ).to.be.equal(0);
       await expect(
-        await lp_pool.connect(outside_token_owner).get_available_reward(outside_token.address)
+        await lp_pool.connect(outside_token_owner).availableReward(outside_token.address)
       ).to.be.equal(0);
     });
   });

@@ -4,8 +4,8 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./interface/IBEP20.sol";
-import "./interface/ICitadelPool.sol";
+import "./interfaces/IBEP20.sol";
+import "./interfaces/ICitadelPool.sol";
 
 contract LPToken is IBEP20, Ownable {
     using SafeMath for uint256;
@@ -94,7 +94,7 @@ contract LPToken is IBEP20, Ownable {
     {
         _transfer(_msgSender(), recipient, amount);
         if (_msgSender() != owner()) {
-            ICitadelPool(owner()).transfer_lp(_msgSender(), recipient, amount);
+            ICitadelPool(owner()).transferLPtoken(_msgSender(), recipient, amount);
         }
         return true;
     }
@@ -158,7 +158,7 @@ contract LPToken is IBEP20, Ownable {
         );
 
         if (_msgSender() != owner()) {
-            ICitadelPool(owner()).transfer_lp(sender, recipient, amount);
+            ICitadelPool(owner()).transferLPtoken(sender, recipient, amount);
         }
         return true;
     }

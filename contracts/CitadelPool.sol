@@ -2,23 +2,25 @@
 
 pragma solidity ^0.7.0;
 
-import "./interface/IBEP20.sol";
-import "./interface/ILPToken.sol";
-import "./LPToken.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/Create2.sol";
+import "./interfaces/IBEP20.sol";
+import "./interfaces/ILPToken.sol";
+import "./interfaces/ICitadelPool.sol";
+import "./interfaces/IFlashLoanReceiver.sol";
+import "./LPToken.sol";
 
-contract CitadelPool is AccessControl {
+contract CitadelPool is ICitadelPool, AccessControl {
     using SafeMath for uint256;
 
     struct LiquidityPool {
         uint256 receipt_profit; //Profit per day
-        uint256 total_profit;
+        uint256 total_profit; //Total profit
         uint256 tps_amount; //Tokens per staked amount
         uint256 prev_tps_amount; //Tokens per staked amount for previously day
         uint256 total_stacked; //Balance of tokens
-        uint256 daily_stacked; //Balance of tokens per day
+        uint256 daily_stacked; //Balance of tokens for current day
+        bool sign_daily_stacked;
     }
 
     struct Stake {
@@ -29,42 +31,37 @@ contract CitadelPool is AccessControl {
         bool sign_missed_profit; // 0 - positive, 1 - negative
     }
 
-    struct LPInfo {
+    struct TokenDetail {
         ILPToken addr;
         bool enabled;
+        uint256 cur_day; //Current day from start time
     }
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER");
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER");
 
     uint256 public start_time; //Deploy timestamp
-    uint256 public cur_day; //Current day from start time
-    mapping(IBEP20 => LPInfo) token_whitelist; //Enabled tokens
+    uint256 ape_tax;
+    mapping(IBEP20 => TokenDetail) token_whitelist; //Enabled tokens
     mapping(ILPToken => IBEP20) reversed_whitelist;
     mapping(IBEP20 => LiquidityPool) liquidity_pool;
     mapping(IBEP20 => mapping(address => Stake)) user_stacked; //Balance per accounts
 
     event Deposited(
-        address indexed _depositor,
-        IBEP20 indexed _token,
-        uint256 _amount,
-        uint256 _mintAmount
-    );
-    event Withdrew(
-        address indexed _reciever,
-        IBEP20 indexed _token,
-        uint256 _amount
-    );
-    event Borrowed(
-        address indexed _borrower,
-        IBEP20 indexed _token,
-        uint256 _amount,
-        uint256 _fee
-    );
-    event Profited(
-        address indexed _borrower,
+        address indexed depositor,
         IBEP20 indexed token,
         uint256 amount
+    );
+    event Withdrew(
+        address indexed reciever,
+        IBEP20 indexed token,
+        uint256 amount
+    );
+    event FlashLoan(
+        address indexed receiver,
+        IBEP20 indexed token,
+        uint256 amount,
+        uint256 premium
     );
     event Rewarded(
         address indexed _borrower,
@@ -77,70 +74,91 @@ contract CitadelPool is AccessControl {
         _setupRole(ADMIN_ROLE, _msgSender());
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         start_time = block.timestamp;
-        cur_day = 0;
     }
 
-    function get_token_whitelist(IBEP20 token) public view returns (ILPToken) {
+    function tokenWhitelist(IBEP20 token)
+        public
+        view
+        override
+        returns (ILPToken)
+    {
         if (token_whitelist[token].enabled) {
             return token_whitelist[token].addr;
         }
         return ILPToken(0);
     }
 
-    function get_reversed_whitelist(ILPToken token)
+    function reversedWhitelist(ILPToken token)
         public
         view
+        override
         returns (IBEP20)
     {
         return reversed_whitelist[token];
     }
 
-    function get_total_stacked(IBEP20 token) public view returns (uint256) {
+    function totalStacked(IBEP20 token) public view override returns (uint256) {
         return liquidity_pool[token].total_stacked;
     }
 
-    function get_account_stacked(IBEP20 token) public view returns (uint256) {
+    function accountStacked(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
         return user_stacked[token][_msgSender()].total_stacked;
     }
 
-    function get_missed_profit(IBEP20 token) public view returns (uint256) {
+    function missedProfit(IBEP20 token) public view override returns (uint256) {
         return user_stacked[token][_msgSender()].missed_profit;
     }
 
-    function get_available_reward(IBEP20 token) public view returns (uint256) {
+    function availableReward(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
         return user_stacked[token][_msgSender()].available_reward;
     }
 
-    function update_whitelist(address token, bool enabled) public {
+    function updateWhitelist(IBEP20 token, bool enabled) public override {
         require(
             hasRole(ADMIN_ROLE, _msgSender()),
             "Pool: Caller is not a admin"
         );
         //deploy new LP-token
-        if (token_whitelist[IBEP20(token)].addr == ILPToken(0)) {
+        if (token_whitelist[token].addr == ILPToken(0)) {
             bytes32 salt = keccak256(abi.encodePacked(token));
-            string memory name =
-                string(abi.encodePacked("ct", IBEP20(token).name()));
+            string memory name = string(abi.encodePacked("ctl", token.name()));
             string memory symbol =
-                string(abi.encodePacked("ct", IBEP20(token).symbol()));
+                string(abi.encodePacked("ctl", token.symbol()));
             address lp_token =
                 address(
                     new LPToken{salt: salt}(name, symbol, 18, address(this))
                 );
-            token_whitelist[IBEP20(token)].addr = ILPToken(lp_token);
-            reversed_whitelist[ILPToken(lp_token)] = IBEP20(token);
+            token_whitelist[token].addr = ILPToken(lp_token);
+            reversed_whitelist[ILPToken(lp_token)] = token;
         }
-        token_whitelist[IBEP20(token)].enabled = enabled;
+        token_whitelist[token].enabled = enabled;
     }
 
-    function deposit(IBEP20 token, uint256 amount) public {
+    function updateApeTax(uint256 ape_tax_) public override {
+        require(
+            hasRole(ADMIN_ROLE, _msgSender()),
+            "Pool: Caller is not a admin"
+        );
+        ape_tax = ape_tax_;
+    }
+
+    function deposit(IBEP20 token, uint256 amount) public override {
         require(token != IBEP20(0), "Pool: Token is invalid");
         require(token_whitelist[token].enabled, "Pool: Token is not enabled");
         require(amount > 0, "Pool: Amount is invalid");
 
         token.transferFrom(_msgSender(), address(this), amount);
 
-        ILPToken lp_token = token_whitelist[token].addr;
         LiquidityPool storage pool = liquidity_pool[token];
         Stake storage account = user_stacked[token][_msgSender()];
 
@@ -150,18 +168,19 @@ contract CitadelPool is AccessControl {
         calc_available_reward(account, pool.tps_amount);
 
         //Mint missed amount of lp-tokens
+        ILPToken lp_token = token_whitelist[token].addr;
         uint256 lp_balance = lp_token.balanceOf(address(this));
         if (lp_balance < amount) {
             lp_token.mint(amount.sub(lp_balance));
         }
         lp_token.transfer(_msgSender(), amount);
-        emit Deposited(_msgSender(), token, amount, amount);
+        emit Deposited(_msgSender(), token, amount);
     }
 
-    function withdraw(IBEP20 token, uint256 amount) public {
+    function withdraw(IBEP20 token, uint256 amount) public override {
         require(token != IBEP20(0), "Pool: Token is invalid");
         ILPToken lp_token = token_whitelist[token].addr;
-        require(lp_token != ILPToken(0), "Pool: Token is not enabled");
+        require(lp_token != ILPToken(0), "Pool: Token is not enabled"); //Token not added
         Stake storage account = user_stacked[token][_msgSender()];
         require(
             account.total_stacked >= amount && amount > 0,
@@ -182,29 +201,10 @@ contract CitadelPool is AccessControl {
         account.total_stacked = account.total_stacked.sub(amount);
         sub_missed_profit(account, amount.mul(pool.prev_tps_amount).div(1e18));
         calc_available_reward(account, pool.tps_amount);
-
         emit Withdrew(_msgSender(), token, amount);
     }
 
-    function add_profit(IBEP20 token, uint256 amount) public {
-        require(token_whitelist[token].enabled, "Pool: Token is not enabled");
-        //Receipt profit set in zero every day
-        LiquidityPool storage p = liquidity_pool[token];
-        uint256 day = (block.timestamp.sub(start_time)).div(86400);
-        if (day != cur_day) {
-            cur_day = day;
-            p.receipt_profit = 0;
-            p.prev_tps_amount = p.tps_amount;
-        }
-        p.receipt_profit = p.receipt_profit.add(amount);
-        p.total_profit = p.total_profit.add(amount);
-        p.tps_amount = p.tps_amount.add(
-            p.receipt_profit.mul(1e18).div(p.total_stacked)
-        );
-        emit Profited(_msgSender(), token, amount);
-    }
-
-    function claim_reward(IBEP20 token, uint256 amount) public {
+    function claimReward(IBEP20 token, uint256 amount) public override {
         require(token_whitelist[token].enabled, "Pool: Token is not enabled");
         Stake storage account = user_stacked[token][_msgSender()];
         require(
@@ -216,12 +216,12 @@ contract CitadelPool is AccessControl {
         emit Rewarded(_msgSender(), token, amount);
     }
 
-    function transfer_lp(
+    // This function called from LP-token contract
+    function transferLPtoken(
         address sender,
         address recipient,
         uint256 amount
-    ) public {
-        // This function called from LP-token contract
+    ) public override {
         IBEP20 token = reversed_whitelist[ILPToken(_msgSender())];
         require(
             token != IBEP20(0) && token_whitelist[token].enabled,
@@ -253,7 +253,57 @@ contract CitadelPool is AccessControl {
         account_r.missed_profit = account_r.missed_profit.add(missed_profit);
     }
 
-    function flash(uint256 amount) public {}
+    function flashLoan(
+        address receiver,
+        IBEP20 token,
+        uint256 amount,
+        bytes calldata params
+    ) public override {
+        require(hasRole(BORROWER_ROLE, _msgSender()), "Pool: Caller is not a borrower");
+        require(token != IBEP20(0), "Pool: Token is invalid");
+        require(token_whitelist[token].enabled, "Pool: Token is not enabled");
+        require(
+            amount > 0 && amount <= liquidity_pool[token].total_stacked,
+            "Pool: Amount is invalid"
+        );
+
+        token.transfer(receiver, amount);
+        //FIXME: add percent of profit and ape_tax
+        uint256 profit_percent = 700;
+        uint256 premium = (amount * profit_percent) / 100000;
+        IFlashLoanReceiver(receiver).executeOperation(
+            token,
+            amount,
+            premium,
+            _msgSender(),
+            params
+        );
+        token.transferFrom(receiver, address(this), amount.add(premium));
+        emit FlashLoan(receiver, token, amount, premium);
+    }
+
+    function add_profit(IBEP20 token, uint256 amount) internal {
+        check_current_day_and_update_pool(token);
+        LiquidityPool storage pool = liquidity_pool[token];
+        pool.receipt_profit = pool.receipt_profit.add(amount);
+        pool.total_profit = pool.total_profit.add(amount);
+        pool.tps_amount = pool.tps_amount.add(
+            pool.receipt_profit.mul(1e18).div(pool.total_stacked)
+        );
+    }
+
+    //Receipt profit set in zero and save tps_amount for previous day one times per day
+    function check_current_day_and_update_pool(IBEP20 token) internal {
+        uint256 day = (block.timestamp.sub(start_time)).div(86400);
+        if (token_whitelist[token].cur_day != day) {
+            token_whitelist[token].cur_day = day;
+            LiquidityPool storage pool = liquidity_pool[token];
+            pool.receipt_profit = 0;
+            pool.daily_stacked = 0;
+            pool.sign_daily_stacked = false;
+            pool.prev_tps_amount = pool.tps_amount;
+        }
+    }
 
     function sub_missed_profit(Stake storage st, uint256 amount) internal {
         //missed_profit is positive
