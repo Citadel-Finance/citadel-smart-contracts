@@ -13,6 +13,7 @@ contract CTLToken is IBEP20, Ownable {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
+    int256 private _maxTotalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
@@ -21,15 +22,12 @@ contract CTLToken is IBEP20, Ownable {
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        uint256 totalSupply_
+        uint256 maxTotalSupply_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
         _totalSupply = totalSupply_;
-        _balances[msg.sender] = _totalSupply;
-
-        emit Transfer(address(0), msg.sender, _totalSupply);
     }
 
     /**

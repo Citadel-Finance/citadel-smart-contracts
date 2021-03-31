@@ -33,7 +33,8 @@ describe("Liquidity pool contract", () => {
       process.env.TOKEN_DECIMALS,
       web3.utils.toWei(process.env.TOKEN_TOTAL_SUPPLY, "ether")
     );
-    lp_pool = await LPPool.deploy();
+    var start_time = new Date().getTime();
+    lp_pool = await LPPool.deploy(start_time, "7000000000000000");
   });
   describe("Deployment", () => {
     /*it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
