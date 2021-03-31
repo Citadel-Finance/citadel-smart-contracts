@@ -140,18 +140,18 @@ describe("Liquidity pool contract", () => {
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
 
       //Approve for transfer outside token to LP-pool
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, 100);
+      await outside_token.connect(outside_token_owner).approve(lp_pool.address, 1000);
 
       //Outside token trafered to LP-pool address and add stacked
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 100);
+      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 1000);
 
       //Check staked
       await expect(
         await lp_pool.connect(outside_token_owner).accountStacked(outside_token.address)
-      ).to.be.equal(100);
+      ).to.be.equal(993);
       await expect(
         await lp_pool.connect(outside_token_owner).totalStacked(outside_token.address)
-      ).to.be.equal(100);
+      ).to.be.equal(993);
       await expect(
         await lp_pool.connect(outside_token_owner).missedProfit(outside_token.address)
       ).to.be.equal(0);
