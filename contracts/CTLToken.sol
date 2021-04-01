@@ -13,7 +13,7 @@ contract CTLToken is IBEP20, Ownable {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
-    int256 private _maxTotalSupply;
+    uint256 private _maxTotalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
@@ -27,7 +27,7 @@ contract CTLToken is IBEP20, Ownable {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        _totalSupply = totalSupply_;
+        _maxTotalSupply = maxTotalSupply_;
     }
 
     /**
@@ -265,8 +265,9 @@ contract CTLToken is IBEP20, Ownable {
      */
     function _mint(address account, uint256 amount) internal virtual {
         require(account != address(0), "BEP20: mint to the zero address");
-
         _totalSupply = _totalSupply.add(amount);
+        require(_totalSupply<=_maxTotalSupply, "Total supply reached maximum");
+
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
     }

@@ -4,9 +4,9 @@ import "./IBEP20.sol";
 import "./ILPToken.sol";
 
 interface ICitadelPool {
-    function tokenWhitelist(IBEP20 token) external view returns (ILPToken);
+    function isPoolEnabled(IBEP20 token) external view returns (bool);
 
-    function reversedWhitelist(ILPToken token) external view returns (IBEP20);
+    function getLPToken(IBEP20 token) external view returns (ILPToken);
 
     function totalStacked(IBEP20 token) external view returns (uint256);
 
@@ -18,7 +18,7 @@ interface ICitadelPool {
 
     function updateWhitelist(IBEP20 token, bool enabled) external;
 
-    function updateApeTax(uint256 ape_tax_) external;
+    function updateApyTax(uint256 ape_tax_) external;
 
     function deposit(IBEP20 token, uint256 amount) external;
 

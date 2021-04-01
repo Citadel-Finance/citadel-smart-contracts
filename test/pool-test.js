@@ -5,36 +5,50 @@ const { ethers, waffle } = require("hardhat");
 require("@nomiclabs/hardhat-waffle");
 
 const nullstr = "0x0000000000000000000000000000000000000000"
+let main_token_owner;
 let outside_token_owner;
 let lp_pool_owner;
 let lp_token_owner;
-let user1;
+
 let user2;
 let user3;
 
 ethers.getSigners().then(val => {
-  [outside_token_owner, lp_token_owner, lp_pool_owner, user1, user2, user3] = val;
+  [outside_token_owner, lp_token_owner, lp_pool_owner, main_token_owner, user2, user3] = val;
 });
 
 describe("Liquidity pool contract", () => {
   let OutsideToken;
+  let MainToken;
   let LPPool;
   let LPToken;
+  let main_token;
   let outside_token;
   let lp_pool;
   beforeEach(async () => {
     require('dotenv').config();
     OutsideToken = await ethers.getContractFactory("CTLToken", outside_token_owner);
+    MainToken = await ethers.getContractFactory("CTLToken", main_token_owner);
     LPPool = await ethers.getContractFactory("CitadelPool", lp_pool_owner);
     LPToken = await ethers.getContractFactory("LPToken", lp_token_owner);
+
     outside_token = await OutsideToken.deploy(
+      "OUTSIDE",
+      "OUT",
+      18,
+      web3.utils.toWei(process.env.TOKEN_TOTAL_SUPPLY, "ether")
+    );
+     await outside_token.connect(outside_token_owner).mint(1000);
+
+    main_token = await MainToken.deploy(
       process.env.TOKEN_NAME,
       process.env.TOKEN_SYMBOL,
       process.env.TOKEN_DECIMALS,
       web3.utils.toWei(process.env.TOKEN_TOTAL_SUPPLY, "ether")
     );
     var start_time = new Date().getTime();
-    lp_pool = await LPPool.deploy(start_time, "7000000000000000");
+
+    lp_pool = await LPPool.deploy(main_token.address, start_time, "7000000000000000");
   });
   describe("Deployment", () => {
     /*it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
@@ -58,12 +72,17 @@ describe("Liquidity pool contract", () => {
 
     it("Add token to whitelist", async () => {
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
-      var lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
+
+      await expect(
+        await lp_pool.connect(lp_pool_owner).isPoolEnabled(outside_token.address)
+      ).to.be.equal(true);
+
+      lp_token_address = await lp_pool.connect(lp_pool_owner).getLPToken(outside_token.address);
 
       await expect(lp_token_address).to.be.properAddress;
 
       await expect(
-        await lp_pool.connect(lp_pool_owner).reversedWhitelist(lp_token_address)
+        await lp_pool.connect(lp_pool_owner).reversed_whitelist(lp_token_address)
       ).to.be.equal(outside_token.address);
 
       const lp_token = await LPToken.attach(lp_token_address);
@@ -80,17 +99,17 @@ describe("Liquidity pool contract", () => {
     it("Disable token in whitelist ", async () => {
       //Add token
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
-      var lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
+      var lp_token_address = await lp_pool.connect(lp_pool_owner).getLPToken(outside_token.address);
       await expect(lp_token_address).to.be.properAddress;
       await expect(
-        await lp_pool.connect(lp_pool_owner).reversedWhitelist(lp_token_address)
+        await lp_pool.connect(lp_pool_owner).reversed_whitelist(lp_token_address)
       ).to.be.equal(outside_token.address);
 
       //Disable token
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, false);
-      lp_token_address = await lp_pool.connect(lp_pool_owner).tokenWhitelist(outside_token.address);
-      await expect(lp_token_address).to.be.properAddress;
-      await expect(lp_token_address).to.be.equal(nullstr);
+      await expect(
+        await lp_pool.connect(lp_pool_owner).isPoolEnabled(outside_token.address)
+      ).to.be.equal(false);
     });
   });
 

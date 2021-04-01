@@ -32,10 +32,10 @@ contract CitadelPool is ICitadelPool, AccessControl {
         uint256 total_profit;
         uint256 tps_amount;
         uint256 prev_tps_amount;
-        uint256 total_stacked; //
-        uint256 daily_stacked; //
+        uint256 total_stacked;
+        uint256 daily_stacked;
         ILPToken lp_token;
-        bool sign_daily_stacked; //
+        bool sign_daily_stacked;
         bool enabled;
     }
 
@@ -82,34 +82,34 @@ contract CitadelPool is ICitadelPool, AccessControl {
     /// @dev CTL token address
     IBEP20 ctl_token;
 
-    /// @dev Mapping tokens address to liquidity pool state
+    /// @dev Outside token addresses mapping to liquidity pool state
     mapping(IBEP20 => LiquidityPool) liquidity_pool;
 
-    /// @dev 
-    mapping(ILPToken => IBEP20) reversed_whitelist;
+    /// @dev LP-token addresses mapping to outside token addresses
+    mapping(ILPToken => IBEP20) public reversed_whitelist;
 
-
-    mapping(IBEP20 => mapping(address => Stake)) user_stacked; //Balance per accounts
+    /// @dev Stake of users for each token
+    mapping(IBEP20 => mapping(address => Stake)) user_stacked;
 
     //Loans
     mapping(IBEP20 => AllLoans) loans;
     mapping(IBEP20 => mapping(address => Loan)) borrowers_loans;
 
-    /// @dev Event emitted when the
+    /// @dev Event emitted when the depositor sends funds
     event Deposited(
         address indexed depositor,
         IBEP20 indexed token,
         uint256 amount
     );
 
-    /// @dev Event emitted when the
+    /// @dev Event emitted when the depositor received funds
     event Withdrew(
-        address indexed reciever,
+        address indexed receiver,
         IBEP20 indexed token,
         uint256 amount
     );
 
-    /// @dev Event emitted when the
+    /// @dev Event emitted when the borrower has borrowed and repaid funds
     event FlashLoan(
         address indexed receiver,
         IBEP20 indexed token,
@@ -117,7 +117,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         uint256 premium
     );
 
-    /// @dev Event emitted when the
+    /// @dev Event emitted when the depositor claimed rewards
     event Rewarded(
         address indexed _borrower,
         IBEP20 indexed token,
@@ -125,49 +125,36 @@ contract CitadelPool is ICitadelPool, AccessControl {
     );
 
     /**
-     * @notice
-     * @param start_time_
-     * @param apy_tax_
+     * @param start_time_ Timestamp of start contract
+     * @param apy_tax_ APY tax value
      */
-    constructor(uint256 start_time_, uint256 apy_tax_) {
+    constructor(
+        IBEP20 token,
+        uint256 start_time_,
+        uint256 apy_tax_
+    ) {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(ADMIN_ROLE, _msgSender());
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         start_time = start_time_;
         apy_tax = apy_tax_;
+        ctl_token = token;
     }
 
     /**
-     * @notice Return LP-token address if outside BEP20 token is allowed
+     * @notice Return true if outside BEP20 token is allowed for pool
      * @param token Address of BEP20 token
      */
-    function tokenWhitelist(IBEP20 token)
-        public
-        view
-        override
-        returns (ILPToken)
-    {
-        if (liquidity_pool[token].enabled) {
-            return liquidity_pool[token].lp_token;
-        }
-        return ILPToken(0);
+    function isPoolEnabled(IBEP20 token) public view override returns (bool) {
+        return liquidity_pool[token].enabled;
+    }
+
+    function getLPToken(IBEP20 token) public view override returns (ILPToken) {
+        return liquidity_pool[token].lp_token;
     }
 
     /**
-     * @notice
-     * @param token
-     */
-    function reversedWhitelist(ILPToken token)
-        public
-        view
-        override
-        returns (IBEP20)
-    {
-        return reversed_whitelist[token];
-    }
-
-    /**
-     * @notice
+     * @notice Total staked liquidity
      * @param token Address of BEP20 token
      */
     function totalStacked(IBEP20 token) public view override returns (uint256) {
@@ -175,7 +162,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
+     * @notice Get liquidity amount staked from account
      * @param token Address of BEP20 token
      */
     function accountStacked(IBEP20 token)
@@ -188,7 +175,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
+     * @notice Get accounts missed profit
      * @param token Address of BEP20 token
      */
     function missedProfit(IBEP20 token) public view override returns (uint256) {
@@ -196,7 +183,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
+     * @notice Get accounts available rewards
      * @param token Address of BEP20 token
      */
     function availableReward(IBEP20 token)
@@ -248,9 +235,21 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
+     * @notice set address of CTL token contract
+     * @param token CTL token address
+     */
+    function updateCTLtoken(IBEP20 token) public {
+        require(
+            hasRole(ADMIN_ROLE, _msgSender()),
+            "Pool: Caller is not a admin"
+        );
+        ctl_token = token;
+    }
+
+    /**
+     * @notice Stake liquidity to pool
      * @param token Address of BEP20 token
-     * @param amount Amount of 
+     * @param amount Funds amount
      */
     function deposit(IBEP20 token, uint256 amount) public override {
         require(token != IBEP20(0), "Pool: Token is invalid");
@@ -275,20 +274,20 @@ contract CitadelPool is ICitadelPool, AccessControl {
         calc_available_reward(account, pool.tps_amount);
         pool.total_profit = pool.total_profit.add(profit);
 
-        //Mint missed amount of lp-tokens
+        //Mint missed amount of LP-tokens
         uint256 lp_balance = pool.lp_token.balanceOf(address(this));
         if (lp_balance < stacked_amount) {
             pool.lp_token.mint(stacked_amount.sub(lp_balance));
         }
-        //send lp-tokens
+        //send LP-tokens
         pool.lp_token.transfer(_msgSender(), stacked_amount);
         emit Deposited(_msgSender(), token, stacked_amount);
     }
 
     /**
-     * @notice
+     * @notice Withdraw funds from pool
      * @param token Address of BEP20 token
-     * @param amount
+     * @param amount Funds amount
      */
     function withdraw(IBEP20 token, uint256 amount) public override {
         require(token != IBEP20(0), "Pool: Token is invalid");
@@ -312,9 +311,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
+     * @notice Withdraw rewards from pool in CTL tokens
      * @param token Address of BEP20 token
-     * @param amount
+     * @param amount Rewards amount
      */
     function claimReward(IBEP20 token, uint256 amount) public override {
         LiquidityPool storage pool = liquidity_pool[token];
@@ -334,10 +333,10 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice This function called from LP-token contract
-     * @param sender
-     * @param recipient
-     * @param amount
+     * @notice Recalc pool state when LP-tokens transferred, this function called from LP-token contract
+     * @param sender Senders address of LP-tokens
+     * @param recipient Recipient address
+     * @param amount Funds amount
      */
     function transferLPtoken(
         address sender,
@@ -380,11 +379,11 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param receiver
-     * @param token Address of BEP20 token
-     * @param amount
-     * @param params
+     * @notice Borrowers flash loan request
+     * @param receiver Address of flash loan receiver contract
+     * @param token Address of requested BEP20 token
+     * @param amount Funds amount
+     * @param params Parameters for flash loan receiver contract
      */
     function flashLoan(
         address receiver,
@@ -428,9 +427,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param pool
-     * @param premium
+     * @notice Function called when borrowers returned premium to liquidity pool
+     * @param pool liquidity pool storage reference
+     * @param premium premium amount
      */
     function add_profit(LiquidityPool storage pool, uint256 premium) internal {
         check_current_day_and_update_pool(pool);
@@ -443,7 +442,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
     /**
      * @notice Receipt profit set in zero and save tps_amount for previous day one times per day
-     * @param pool
+     * @param pool liquidity pool storage reference
      */
     function check_current_day_and_update_pool(LiquidityPool storage pool)
         internal
@@ -459,9 +458,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param st
-     * @param amount
+     * @notice Recalc missed profit when user deposited or transfered funds
+     * @param st Users stake storage reference
+     * @param amount Profit amount
      */
     function add_missed_profit(Stake storage st, uint256 amount) internal {
         //missed_profit is negative
@@ -478,9 +477,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param st
-     * @param amount
+     * @notice Recalc missed profit when user withdrawal or transfered funds
+     * @param st Users stake storage reference
+     * @param amount Profit amount
      */
     function sub_missed_profit(Stake storage st, uint256 amount) internal {
         //missed_profit is positive
@@ -497,9 +496,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param st
-     * @param tps_amount
+     * @notice Recalc available rewards when users deposited or withdrawal funds or claimed rewards
+     * @param st Users stake storage reference
+     * @param tps_amount Current total per staked amount
      */
     function calc_available_reward(Stake storage st, uint256 tps_amount)
         internal
@@ -515,9 +514,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param pool
-     * @param amount
+     * @notice Add deposit amount to liquidity pools daily staked
+     * @param pool Liquidity pool storage reference
+     * @param amount Deposit amount
      */
     function add_daily_stacked(LiquidityPool storage pool, uint256 amount)
         internal
@@ -536,9 +535,9 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice
-     * @param pool
-     * @param amount
+     * @notice Subtract withdraw amount from liquidity pools daily staked
+     * @param pool Liquidity pool storage reference
+     * @param amount Withdraw amount
      */
     function sub_daily_stacked(LiquidityPool storage pool, uint256 amount)
         internal
