@@ -8,17 +8,25 @@ interface ICitadelPool {
 
     function getLPToken(IBEP20 token) external view returns (ILPToken);
 
-    function totalStacked(IBEP20 token) external view returns (uint256);
+    function getTotalStacked(IBEP20 token) external view returns (uint256);
 
-    function accountStacked(IBEP20 token) external view returns (uint256);
+    function getDailyStacked(IBEP20 token) external view returns (bool, uint256);
 
-    function missedProfit(IBEP20 token) external view returns (uint256);
+    function getTotalProfit(IBEP20 token) external view returns (uint256);
 
-    function availableReward(IBEP20 token) external view returns (uint256);
+    function getAccountStacked(IBEP20 token) external view returns (uint256);
+
+    function getMissedProfit(IBEP20 token) external view returns (bool, uint256);
+
+    function getAvailableReward(IBEP20 token) external view returns (uint256);
+
+    function getClaimedReward(IBEP20 token) external view returns (uint256);
 
     function updateWhitelist(IBEP20 token, bool enabled) external;
 
     function updateApyTax(uint256 ape_tax_) external;
+
+    function updateCTLtoken(IBEP20 token) external;
 
     function deposit(IBEP20 token, uint256 amount) external;
 

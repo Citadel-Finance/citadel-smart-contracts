@@ -38,7 +38,7 @@ describe("Liquidity pool contract", () => {
       18,
       web3.utils.toWei(process.env.TOKEN_TOTAL_SUPPLY, "ether")
     );
-     await outside_token.connect(outside_token_owner).mint(1000);
+    await outside_token.connect(outside_token_owner).mint(1000000);
 
     main_token = await MainToken.deploy(
       process.env.TOKEN_NAME,
@@ -113,8 +113,8 @@ describe("Liquidity pool contract", () => {
     });
   });
 
-  describe("Stake", () => {
-    it("Deposit invalid token fail", async () => {
+  describe("Deposit funds", () => {
+    it("Deposit invalid token: fail", async () => {
       try {
         await lp_pool.connect(outside_token_owner).deposit(nullstr, 100);
       }
@@ -123,7 +123,7 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit disabled token fail", async () => {
+    it("Deposit disabled token: fail", async () => {
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, false);
       try {
         await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 100);
@@ -133,7 +133,7 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit invalid amount of token", async () => {
+    it("Deposit invalid amount of token: fail", async () => {
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
       try {
         await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 0);
@@ -143,7 +143,7 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit not approved token", async () => {
+    it("Deposit not approved token: fail", async () => {
       //LP-pool settings
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
 
@@ -155,7 +155,7 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Deposit liquidity", async () => {
+    it("True deposit: success", async () => {
       //LP-pool settings
       await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
 
@@ -167,17 +167,101 @@ describe("Liquidity pool contract", () => {
 
       //Check staked
       await expect(
-        await lp_pool.connect(outside_token_owner).accountStacked(outside_token.address)
+        await lp_pool.connect(outside_token_owner).getAccountStacked(outside_token.address)
       ).to.be.equal(993);
       await expect(
-        await lp_pool.connect(outside_token_owner).totalStacked(outside_token.address)
+        await lp_pool.connect(outside_token_owner).getTotalStacked(outside_token.address)
       ).to.be.equal(993);
+
+      [sign, value] = await lp_pool.connect(outside_token_owner).getDailyStacked(outside_token.address);
+      await expect(sign).to.be.equal(false);
+      await expect(value).to.be.equal(993);
+
+      [sign, value] = await lp_pool.connect(outside_token_owner).getMissedProfit(outside_token.address);
+      await expect(sign).to.be.equal(false);
+      await expect(value).to.be.equal(0);
+
       await expect(
-        await lp_pool.connect(outside_token_owner).missedProfit(outside_token.address)
-      ).to.be.equal(0);
-      await expect(
-        await lp_pool.connect(outside_token_owner).availableReward(outside_token.address)
+        await lp_pool.connect(outside_token_owner).getAvailableReward(outside_token.address)
       ).to.be.equal(0);
     });
+  });
+
+  describe("Withdraw funds", () => {
+    it("Withdraw invalid token: fail", async () => {
+      try {
+        await lp_pool.connect(outside_token_owner).withdraw(nullstr, 100);
+      }
+      catch (e) {
+        await expect(e.message).to.include('Pool: Token is invalid')
+      }
+    });
+
+    it("Withdraw not added token: fail", async () => {
+      try {
+        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, 100);
+      }
+      catch (e) {
+        await expect(e.message).to.include('Pool: Token is not enabled')
+      }
+    });
+
+    it("Withdraw invalid amount (0) of token: fail", async () => {
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
+      await outside_token.connect(outside_token_owner).approve(lp_pool.address, 100);
+      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 100);
+      try {
+        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, 0);
+      }
+      catch (e) {
+        await expect(e.message).to.include('Pool: Amount is invalid')
+      }
+    });
+
+    it("Withdraw invalid amount (> deposited) of token: fail", async () => {
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
+      await outside_token.connect(outside_token_owner).approve(lp_pool.address, 1000);
+      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 1000);
+      try {
+        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, 994);
+      }
+      catch (e) {
+        await expect(e.message).to.include('Pool: Amount is invalid')
+      }
+    });
+
+    it("True withdraw: success", async () => {
+      await lp_pool.connect(lp_pool_owner).updateWhitelist(outside_token.address, true);
+      //deposit token to  pool
+      await outside_token.connect(outside_token_owner).approve(lp_pool.address, 1000);
+      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, 1000);
+      //approve lp_token to pool
+      lp_token_address = await lp_pool.connect(outside_token_owner).getLPToken(outside_token.address);
+      lp_token = await LPToken.attach(lp_token_address);
+      await lp_token.connect(outside_token_owner).approve(lp_pool.address, 100);
+      
+      await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, 100);
+      //Check staked
+      await expect(
+        await lp_pool.connect(outside_token_owner).getAccountStacked(outside_token.address)
+      ).to.be.equal(893);
+      await expect(
+        await lp_pool.connect(outside_token_owner).getTotalStacked(outside_token.address)
+      ).to.be.equal(893);
+
+      [sign, value] = await lp_pool.connect(outside_token_owner).getDailyStacked(outside_token.address);
+      await expect(sign).to.be.equal(false);
+      await expect(value).to.be.equal(893);
+
+      [sign, value] = await lp_pool.connect(outside_token_owner).getMissedProfit(outside_token.address);
+      await expect(sign).to.be.equal(false);
+      await expect(value).to.be.equal(0);
+
+      await expect(
+        await lp_pool.connect(outside_token_owner).getAvailableReward(outside_token.address)
+      ).to.be.equal(0);
+    });
+  });
+  describe("Claim rewards", () => {
   });
 });

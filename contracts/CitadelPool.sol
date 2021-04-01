@@ -157,15 +157,49 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @notice Total staked liquidity
      * @param token Address of BEP20 token
      */
-    function totalStacked(IBEP20 token) public view override returns (uint256) {
+    function getTotalStacked(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
         return liquidity_pool[token].total_stacked;
+    }
+
+    /**
+     * @notice Daily staked liquidity
+     * @param token Address of BEP20 token
+     */
+    function getDailyStacked(IBEP20 token)
+        public
+        view
+        override
+        returns (bool, uint256)
+    {
+        return (
+            liquidity_pool[token].sign_daily_stacked,
+            liquidity_pool[token].daily_stacked
+        );
+    }
+
+    /**
+     * @notice Total profit
+     * @param token Address of BEP20 token
+     */
+    function getTotalProfit(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        return liquidity_pool[token].total_profit;
     }
 
     /**
      * @notice Get liquidity amount staked from account
      * @param token Address of BEP20 token
      */
-    function accountStacked(IBEP20 token)
+    function getAccountStacked(IBEP20 token)
         public
         view
         override
@@ -178,21 +212,42 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @notice Get accounts missed profit
      * @param token Address of BEP20 token
      */
-    function missedProfit(IBEP20 token) public view override returns (uint256) {
-        return user_stacked[token][_msgSender()].missed_profit;
+    function getMissedProfit(IBEP20 token)
+        public
+        view
+        override
+        returns (bool, uint256)
+    {
+        return (
+            user_stacked[token][_msgSender()].sign_missed_profit,
+            user_stacked[token][_msgSender()].missed_profit
+        );
     }
 
     /**
      * @notice Get accounts available rewards
      * @param token Address of BEP20 token
      */
-    function availableReward(IBEP20 token)
+    function getAvailableReward(IBEP20 token)
         public
         view
         override
         returns (uint256)
     {
         return user_stacked[token][_msgSender()].available_reward;
+    }
+
+    /**
+     * @notice Get accounts available rewards
+     * @param token Address of BEP20 token
+     */
+    function getClaimedReward(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        return user_stacked[token][_msgSender()].claimed_reward;
     }
 
     /**
@@ -238,7 +293,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @notice set address of CTL token contract
      * @param token CTL token address
      */
-    function updateCTLtoken(IBEP20 token) public {
+    function updateCTLtoken(IBEP20 token) public override {
         require(
             hasRole(ADMIN_ROLE, _msgSender()),
             "Pool: Caller is not a admin"
@@ -292,6 +347,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
     function withdraw(IBEP20 token, uint256 amount) public override {
         require(token != IBEP20(0), "Pool: Token is invalid");
         LiquidityPool storage pool = liquidity_pool[token];
+
         require(pool.lp_token != ILPToken(0), "Pool: Token is not enabled"); //Token not added
         Stake storage account = user_stacked[token][_msgSender()];
         require(
