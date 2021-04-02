@@ -22,7 +22,7 @@ interface ICitadelPool {
 
     function getClaimedReward(IBEP20 token) external view returns (uint256);
 
-    function updateWhitelist(IBEP20 token, bool enabled) external;
+    function updateWhitelist(IBEP20 token, bool enabled, uint256 min_premium_percent) external;
 
     function updateApyTax(uint256 ape_tax_) external;
 
@@ -36,5 +36,5 @@ interface ICitadelPool {
 
     function transferLPtoken(address sender, address recipient, uint256 amount) external;
 
-    function flashLoan(address receiver, IBEP20 token, uint256 amount, bytes calldata params) external;
+    function flashLoan(address receiver, IBEP20 token, uint256 amount, uint256 premium, bytes calldata params) external;
 }

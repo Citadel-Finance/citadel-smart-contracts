@@ -13,7 +13,7 @@ import "../interfaces/IBEP20.sol";
     exposed to a 'griefing' attack, where the stored funds are used by an attacker.
     !!!
  */
-contract CitadelFlashLoan is IFlashLoanReceiver {
+contract FlashLoanReceiver is IFlashLoanReceiver {
     using SafeMath for uint256;
 
     ICitadelPool public immutable pool;

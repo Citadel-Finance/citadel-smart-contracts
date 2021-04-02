@@ -23,6 +23,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param total_stacked Balance of tokens
      * @param daily_stacked Balance of tokens for current day, is reset to zero every day
      * @param sign_daily_stacked Sign of daily stacked tokens, false - positive, true - negative
+     * @param min_premium_percent Minimum premium percent multiplied to 1e18
      * @param lp_token lp-token address
      * @param enabled true - enable pool, false - disable pool
      */
@@ -34,6 +35,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         uint256 prev_tps_amount;
         uint256 total_stacked;
         uint256 daily_stacked;
+        uint256 min_premium_percent;
         ILPToken lp_token;
         bool sign_daily_stacked;
         bool enabled;
@@ -255,7 +257,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param token Address of BEP20 token
      * @param enabled true - enabled token, false - disabled
      */
-    function updateWhitelist(IBEP20 token, bool enabled) public override {
+    function updateWhitelist(IBEP20 token, bool enabled, uint256 min_premium_percent) public override {
         require(
             hasRole(ADMIN_ROLE, _msgSender()),
             "Pool: Caller is not a admin"
@@ -275,6 +277,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
             reversed_whitelist[ILPToken(lp_token)] = token;
         }
         pool.enabled = enabled;
+        pool.min_premium_percent = min_premium_percent;
     }
 
     /**
@@ -316,18 +319,18 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
         Stake storage account = user_stacked[token][_msgSender()];
 
-        uint256 profit = amount.mul(apy_tax).div(1e18);
-        uint256 stacked_amount = amount.sub(profit);
+        uint256 premium = amount.mul(apy_tax).div(1e18);
+        uint256 stacked_amount = amount.sub(premium);
 
         pool.total_stacked = pool.total_stacked.add(stacked_amount);
-        add_daily_stacked(pool, stacked_amount);
         account.total_stacked = account.total_stacked.add(stacked_amount);
+        add_daily_stacked(pool, stacked_amount);
         add_missed_profit(
             account,
             stacked_amount.mul(pool.prev_tps_amount).div(1e18)
         );
         calc_available_reward(account, pool.tps_amount);
-        pool.total_profit = pool.total_profit.add(profit);
+        add_profit(pool, premium);
 
         //Mint missed amount of LP-tokens
         uint256 lp_balance = pool.lp_token.balanceOf(address(this));
@@ -355,8 +358,8 @@ contract CitadelPool is ICitadelPool, AccessControl {
             "Pool: Amount is invalid"
         );
         pool.total_stacked = pool.total_stacked.sub(amount);
-        sub_daily_stacked(pool, amount);
         account.total_stacked = account.total_stacked.sub(amount);
+        sub_daily_stacked(pool, amount);
         sub_missed_profit(account, amount.mul(pool.prev_tps_amount).div(1e18));
         calc_available_reward(account, pool.tps_amount);
         //receive lp-tokens
@@ -383,6 +386,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         calc_available_reward(account, pool.tps_amount);
 
         //FIXME: calc amount of CTL tokens transferred to liquidity provider
+        // reward_amount * coinprice
         uint256 ctl_amount = 0;
         ctl_token.transfer(_msgSender(), ctl_amount);
         emit Rewarded(_msgSender(), token, amount);
@@ -445,6 +449,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         address receiver,
         IBEP20 token,
         uint256 amount,
+        uint256 premium,
         bytes calldata params
     ) public override {
         require(
@@ -459,13 +464,19 @@ contract CitadelPool is ICitadelPool, AccessControl {
             amount > 0 && amount <= pool.total_stacked && !borrower_loaned.lock,
             "Pool: Amount is invalid"
         );
+        uint256 premium_percent = (premium * 1e18) / amount;
+        require(
+            premium_percent >= pool.min_premium_percent,
+            "Pool: Profit amount is invalid"
+        );
         borrower_loaned.lock = true;
         loans[token].borrowed = loans[token].borrowed.add(amount);
         borrower_loaned.borrowed = borrower_loaned.borrowed.add(amount);
         token.transfer(receiver, amount);
         //FIXME: add percent of profit
-        uint256 profit_percent = 1200;
-        uint256 premium = (amount * profit_percent) / 100000;
+        //uint256 profit_percent = 1200;
+        //uint256 premium = (amount * profit_percent) / 100000;
+
         IFlashLoanReceiver(receiver).executeOperation(
             token,
             amount,
@@ -480,20 +491,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
         borrower_loaned.profit = borrower_loaned.profit.add(premium);
         borrower_loaned.lock = false;
         emit FlashLoan(receiver, token, amount, premium);
-    }
-
-    /**
-     * @notice Function called when borrowers returned premium to liquidity pool
-     * @param pool liquidity pool storage reference
-     * @param premium premium amount
-     */
-    function add_profit(LiquidityPool storage pool, uint256 premium) internal {
-        check_current_day_and_update_pool(pool);
-        pool.receipt_profit = pool.receipt_profit.add(premium);
-        pool.total_profit = pool.total_profit.add(premium);
-        pool.tps_amount = pool.tps_amount.add(
-            pool.receipt_profit.mul(1e18).div(pool.total_stacked)
-        );
     }
 
     /**
@@ -514,58 +511,78 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
+     * @notice Function called when borrowers returned premium to liquidity pool
+     * @param pool liquidity pool storage reference
+     * @param premium premium amount
+     */
+    function add_profit(LiquidityPool storage pool, uint256 premium) internal {
+        check_current_day_and_update_pool(pool);
+        pool.receipt_profit = pool.receipt_profit.add(premium);
+        pool.total_profit = pool.total_profit.add(premium);
+        pool.tps_amount = pool.tps_amount.add(
+            pool.receipt_profit.mul(1e18).div(pool.total_stacked)
+        );
+    }
+
+    /**
      * @notice Recalc missed profit when user deposited or transfered funds
-     * @param st Users stake storage reference
+     * @param account Users stake storage reference
      * @param amount Profit amount
      */
-    function add_missed_profit(Stake storage st, uint256 amount) internal {
+    function add_missed_profit(Stake storage account, uint256 amount) internal {
         //missed_profit is negative
-        if (st.sign_missed_profit) {
-            if (st.missed_profit > amount) {
-                st.missed_profit = st.missed_profit.sub(amount);
+        if (account.sign_missed_profit) {
+            if (account.missed_profit > amount) {
+                account.missed_profit = account.missed_profit.sub(amount);
             } else {
-                st.missed_profit = amount.sub(st.missed_profit);
-                st.sign_missed_profit = false;
+                account.missed_profit = amount.sub(account.missed_profit);
+                account.sign_missed_profit = false;
             }
         } else {
-            st.missed_profit = st.missed_profit.add(amount);
+            account.missed_profit = account.missed_profit.add(amount);
         }
     }
 
     /**
      * @notice Recalc missed profit when user withdrawal or transfered funds
-     * @param st Users stake storage reference
+     * @param account Users stake storage reference
      * @param amount Profit amount
      */
-    function sub_missed_profit(Stake storage st, uint256 amount) internal {
+    function sub_missed_profit(Stake storage account, uint256 amount) internal {
         //missed_profit is positive
-        if (!st.sign_missed_profit) {
-            if (st.missed_profit >= amount) {
-                st.missed_profit = st.missed_profit.sub(amount);
+        if (!account.sign_missed_profit) {
+            if (account.missed_profit >= amount) {
+                account.missed_profit = account.missed_profit.sub(amount);
             } else {
-                st.missed_profit = amount.sub(st.missed_profit);
-                st.sign_missed_profit = true;
+                account.missed_profit = amount.sub(account.missed_profit);
+                account.sign_missed_profit = true;
             }
         } else {
-            st.missed_profit = st.missed_profit.add(amount);
+            account.missed_profit = account.missed_profit.add(amount);
         }
     }
 
     /**
      * @notice Recalc available rewards when users deposited or withdrawal funds or claimed rewards
-     * @param st Users stake storage reference
+     * @param account Users stake storage reference
      * @param tps_amount Current total per staked amount
      */
-    function calc_available_reward(Stake storage st, uint256 tps_amount)
+    function calc_available_reward(Stake storage account, uint256 tps_amount)
         internal
     {
-        st.available_reward = st.total_stacked.mul(tps_amount).div(1e18).sub(
-            st.claimed_reward
-        );
-        if (!st.sign_missed_profit) {
-            st.available_reward = st.available_reward.sub(st.missed_profit);
+        account.available_reward = account
+            .total_stacked
+            .mul(tps_amount)
+            .div(1e18)
+            .sub(account.claimed_reward);
+        if (!account.sign_missed_profit) {
+            account.available_reward = account.available_reward.sub(
+                account.missed_profit
+            );
         } else {
-            st.available_reward = st.available_reward.add(st.missed_profit);
+            account.available_reward = account.available_reward.add(
+                account.missed_profit
+            );
         }
     }
 
