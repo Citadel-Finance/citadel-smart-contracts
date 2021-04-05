@@ -22,11 +22,13 @@ interface ICitadelPool {
 
     function getClaimedReward(IBEP20 token) external view returns (uint256);
 
-    function updateWhitelist(IBEP20 token, bool enabled, uint256 min_premium_percent) external;
+    function updatePool(IBEP20 token, bool enabled) external;
 
     function updateApyTax(uint256 ape_tax_) external;
+    
+    function updatePremiumCoeff(uint256 premium_coeff_) external;
 
-    function updateCTLtoken(IBEP20 token) external;
+    function updateCTLTokenAddress(IBEP20 token) external;
 
     function deposit(IBEP20 token, uint256 amount) external;
 

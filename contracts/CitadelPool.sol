@@ -23,7 +23,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param total_stacked Balance of tokens
      * @param daily_stacked Balance of tokens for current day, is reset to zero every day
      * @param sign_daily_stacked Sign of daily stacked tokens, false - positive, true - negative
-     * @param min_premium_percent Minimum premium percent multiplied to 1e18
      * @param lp_token lp-token address
      * @param enabled true - enable pool, false - disable pool
      */
@@ -35,7 +34,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
         uint256 prev_tps_amount;
         uint256 total_stacked;
         uint256 daily_stacked;
-        uint256 min_premium_percent;
         ILPToken lp_token;
         bool sign_daily_stacked;
         bool enabled;
@@ -81,8 +79,11 @@ contract CitadelPool is ICitadelPool, AccessControl {
     /// @dev APY tax value multiplied to 1e18
     uint256 public apy_tax;
 
+    /// @dev Minimum premium coefficient of borrowed amount multiplied to 1e18
+    uint256 public premium_coeff;
+
     /// @dev CTL token address
-    IBEP20 ctl_token;
+    IBEP20 public ctl_token;
 
     /// @dev Outside token addresses mapping to liquidity pool state
     mapping(IBEP20 => LiquidityPool) liquidity_pool;
@@ -133,14 +134,16 @@ contract CitadelPool is ICitadelPool, AccessControl {
     constructor(
         IBEP20 token,
         uint256 start_time_,
-        uint256 apy_tax_
+        uint256 apy_tax_,
+        uint256 premium_coeff_
     ) {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(ADMIN_ROLE, _msgSender());
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+        ctl_token = token;
         start_time = start_time_;
         apy_tax = apy_tax_;
-        ctl_token = token;
+        premium_coeff = premium_coeff_;
     }
 
     /**
@@ -253,11 +256,11 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice Add enabled token to pool
-     * @param token Address of BEP20 token
+     * @notice Add token to pool and enable or disable his
+     * @param token Address of outside BEP20 token
      * @param enabled true - enabled token, false - disabled
      */
-    function updateWhitelist(IBEP20 token, bool enabled, uint256 min_premium_percent) public override {
+    function updatePool(IBEP20 token, bool enabled) public override {
         require(
             hasRole(ADMIN_ROLE, _msgSender()),
             "Pool: Caller is not a admin"
@@ -277,7 +280,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
             reversed_whitelist[ILPToken(lp_token)] = token;
         }
         pool.enabled = enabled;
-        pool.min_premium_percent = min_premium_percent;
     }
 
     /**
@@ -293,10 +295,22 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
+     * @notice Update premium coefficient
+     * @param premium_coeff_ new premium coefficient value (multiplied to 1e18)
+     */
+    function updatePremiumCoeff(uint256 premium_coeff_) public override {
+        require(
+            hasRole(ADMIN_ROLE, _msgSender()),
+            "Pool: Caller is not a admin"
+        );
+        premium_coeff = premium_coeff_;
+    }
+
+    /**
      * @notice set address of CTL token contract
      * @param token CTL token address
      */
-    function updateCTLtoken(IBEP20 token) public override {
+    function updateCTLTokenAddress(IBEP20 token) public override {
         require(
             hasRole(ADMIN_ROLE, _msgSender()),
             "Pool: Caller is not a admin"
@@ -319,12 +333,12 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
         Stake storage account = user_stacked[token][_msgSender()];
 
-        uint256 premium = amount.mul(apy_tax).div(1e18);
+        uint256 premium = (amount.mul(apy_tax)).div(1e18);
         uint256 stacked_amount = amount.sub(premium);
-
         pool.total_stacked = pool.total_stacked.add(stacked_amount);
         account.total_stacked = account.total_stacked.add(stacked_amount);
         add_daily_stacked(pool, stacked_amount);
+
         add_missed_profit(
             account,
             stacked_amount.mul(pool.prev_tps_amount).div(1e18)
@@ -351,7 +365,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         require(token != IBEP20(0), "Pool: Token is invalid");
         LiquidityPool storage pool = liquidity_pool[token];
 
-        require(pool.lp_token != ILPToken(0), "Pool: Token is not enabled"); //Token not added
+        require(pool.enabled, "Pool: Token is not enabled"); //Token not added
         Stake storage account = user_stacked[token][_msgSender()];
         require(
             account.total_stacked >= amount && amount > 0,
@@ -464,18 +478,14 @@ contract CitadelPool is ICitadelPool, AccessControl {
             amount > 0 && amount <= pool.total_stacked && !borrower_loaned.lock,
             "Pool: Amount is invalid"
         );
-        uint256 premium_percent = (premium * 1e18) / amount;
         require(
-            premium_percent >= pool.min_premium_percent,
+            (premium * 1e18) / amount >= premium_coeff,
             "Pool: Profit amount is invalid"
         );
         borrower_loaned.lock = true;
         loans[token].borrowed = loans[token].borrowed.add(amount);
         borrower_loaned.borrowed = borrower_loaned.borrowed.add(amount);
         token.transfer(receiver, amount);
-        //FIXME: add percent of profit
-        //uint256 profit_percent = 1200;
-        //uint256 premium = (amount * profit_percent) / 100000;
 
         IFlashLoanReceiver(receiver).executeOperation(
             token,
@@ -484,6 +494,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
             _msgSender(),
             params
         );
+
         token.transferFrom(receiver, address(this), amount.add(premium));
         add_profit(pool, premium);
         loans[token].returned = loans[token].returned.add(amount);
@@ -500,7 +511,10 @@ contract CitadelPool is ICitadelPool, AccessControl {
     function check_current_day_and_update_pool(LiquidityPool storage pool)
         internal
     {
-        uint256 day = (block.timestamp.sub(start_time)).div(86400);
+        uint256 day = 0;
+        if (block.timestamp > start_time) {
+            day = (block.timestamp.sub(start_time)).div(86400);
+        }
         if (pool.cur_day != day) {
             pool.cur_day = day;
             pool.receipt_profit = 0;
