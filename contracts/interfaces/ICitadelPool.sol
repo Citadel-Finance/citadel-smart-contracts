@@ -22,10 +22,16 @@ interface ICitadelPool {
 
     function getClaimedReward(IBEP20 token) external view returns (uint256);
 
+    function getTotalLoans(IBEP20 token) external view returns (uint256, uint256);
+
+    function getBorrowerLoans(IBEP20 token) external view returns (uint256, uint256);
+
+    function getBorrowerProfit(IBEP20 token) external view returns (uint256);
+
     function updatePool(IBEP20 token, bool enabled) external;
 
     function updateApyTax(uint256 ape_tax_) external;
-    
+
     function updatePremiumCoeff(uint256 premium_coeff_) external;
 
     function updateCTLTokenAddress(IBEP20 token) external;
@@ -35,6 +41,8 @@ interface ICitadelPool {
     function withdraw(IBEP20 token, uint256 amount) external;
 
     function claimReward(IBEP20 token, uint256 amount) external;
+
+    function calcAvailableReward(IBEP20 token) external;
 
     function transferLPtoken(address sender, address recipient, uint256 amount) external;
 

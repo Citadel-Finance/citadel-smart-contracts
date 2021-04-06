@@ -96,6 +96,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
     //Loans
     mapping(IBEP20 => AllLoans) loans;
+
     mapping(IBEP20 => mapping(address => Loan)) borrowers_loans;
 
     /// @dev Event emitted when the depositor sends funds
@@ -256,6 +257,48 @@ contract CitadelPool is ICitadelPool, AccessControl {
     }
 
     /**
+     * @notice Get total loans info
+     * @param token Address of BEP20 token
+     */
+    function getTotalLoans(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256, uint256)
+    {
+        return (loans[token].borrowed, loans[token].returned);
+    }
+
+    /**
+     * @notice Get borrower loans info
+     * @param token Address of BEP20 token
+     */
+    function getBorrowerLoans(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256, uint256)
+    {
+        return (
+            borrowers_loans[token][_msgSender()].borrowed,
+            borrowers_loans[token][_msgSender()].returned
+        );
+    }
+
+    /**
+     * @notice Get borrower loans info
+     * @param token Address of BEP20 token
+     */
+    function getBorrowerProfit(IBEP20 token)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        return borrowers_loans[token][_msgSender()].profit;
+    }
+
+    /**
      * @notice Add token to pool and enable or disable his
      * @param token Address of outside BEP20 token
      * @param enabled true - enabled token, false - disabled
@@ -392,19 +435,29 @@ contract CitadelPool is ICitadelPool, AccessControl {
         LiquidityPool storage pool = liquidity_pool[token];
         require(pool.enabled, "Pool: Token is not enabled");
         Stake storage account = user_stacked[token][_msgSender()];
+        calc_available_reward(account, pool.tps_amount);
         require(
-            amount <= account.available_reward,
-            "Pool: Amount should be less then available reward"
+            amount > 0 && amount <= account.available_reward,
+            "Pool: Amount should be less or equal then available reward"
         );
         account.claimed_reward = account.claimed_reward.add(amount);
         calc_available_reward(account, pool.tps_amount);
 
+        token.transfer(_msgSender(), amount);
         //FIXME: calc amount of CTL tokens transferred to liquidity provider
         // reward_amount * coinprice
-        uint256 ctl_amount = 0;
+        uint256 ctl_amount = amount; //* coinprice
         ctl_token.transfer(_msgSender(), ctl_amount);
         emit Rewarded(_msgSender(), token, amount);
     }
+
+    /**
+     * @notice Recalc available rewards for account
+     * @param token Address of BEP20 token
+     */
+     function calcAvailableReward(IBEP20 token) public override {
+        calc_available_reward(user_stacked[token][_msgSender()], liquidity_pool[token].tps_amount);
+     }
 
     /**
      * @notice Recalc pool state when LP-tokens transferred, this function called from LP-token contract

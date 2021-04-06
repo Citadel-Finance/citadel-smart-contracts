@@ -7,18 +7,12 @@ const { parseEther } = require("ethers/utils");
 //ethers.provider.send("evm_setNextBlockTimestamp", [time + 10000]);
 
 const nullstr = "0x0000000000000000000000000000000000000000"
-let main_token_owner;
-let outside_token_owner;
+let liquidity_provider;
 let lp_pool_owner;
-let lp_token_owner;
 let borrower;
-let user1;
-let user2;
-let user3;
-let user4;
 
 ethers.getSigners().then(val => {
-  [outside_token_owner, lp_token_owner, lp_pool_owner, main_token_owner, borrower, user1, user2, user3, user4] = val;
+  [liquidity_provider, lp_pool_owner, borrower] = val;
 });
 
 describe("Liquidity pool contract", () => {
@@ -33,10 +27,10 @@ describe("Liquidity pool contract", () => {
   let fl_receiver;
   beforeEach(async () => {
     require('dotenv').config();
-    OutsideToken = await ethers.getContractFactory("CTLToken", outside_token_owner);
-    CTLToken = await ethers.getContractFactory("CTLToken", main_token_owner);
+    OutsideToken = await ethers.getContractFactory("CTLToken", liquidity_provider);
+    CTLToken = await ethers.getContractFactory("CTLToken", lp_pool_owner);
     LPPool = await ethers.getContractFactory("CitadelPool", lp_pool_owner);
-    LPToken = await ethers.getContractFactory("LPToken", lp_token_owner);
+    LPToken = await ethers.getContractFactory("LPToken"), lp_pool_owner;
     FLReceiver = await ethers.getContractFactory("FlashLoanReceiver", borrower);
 
     outside_token = await OutsideToken.deploy(
@@ -45,7 +39,7 @@ describe("Liquidity pool contract", () => {
       18,
       parseEther(process.env.TOKEN_TOTAL_SUPPLY)
     );
-    await outside_token.connect(outside_token_owner).mint(parseEther('1000000'));
+    await outside_token.connect(liquidity_provider).mint(parseEther('1000000'));
 
     ctl_token = await CTLToken.deploy(
       process.env.TOKEN_NAME,
@@ -86,7 +80,7 @@ describe("Liquidity pool contract", () => {
 
     it("Tokens whitelist may be set only admin", async () => {
       try {
-        await lp_pool.connect(outside_token_owner.address).updatePool(outside_token.address, true);
+        await lp_pool.connect(liquidity_provider.address).updatePool(outside_token.address, true);
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Caller is not a admin')
@@ -134,7 +128,7 @@ describe("Liquidity pool contract", () => {
   describe("Deposit funds", () => {
     it("Deposit invalid token: fail", async () => {
       try {
-        await lp_pool.connect(outside_token_owner).deposit(nullstr, parseEther('100'));
+        await lp_pool.connect(liquidity_provider).deposit(nullstr, parseEther('100'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Token is invalid')
@@ -144,7 +138,7 @@ describe("Liquidity pool contract", () => {
     it("Deposit disabled token: fail", async () => {
       await lp_pool.connect(lp_pool_owner).updatePool(outside_token.address, false);
       try {
-        await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('100'));
+        await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('100'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Token is not enabled')
@@ -153,7 +147,7 @@ describe("Liquidity pool contract", () => {
 
     it("Deposit invalid amount of token: fail", async () => {
       try {
-        await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('0'));
+        await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('0'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Amount is invalid')
@@ -163,7 +157,7 @@ describe("Liquidity pool contract", () => {
     it("Deposit not approved token: fail", async () => {
       //LP-pool settings
       try {
-        await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('100'));
+        await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('100'));
       }
       catch (e) {
         await expect(e.message).to.include('BEP20: transfer amount exceeds allowance')
@@ -172,45 +166,45 @@ describe("Liquidity pool contract", () => {
 
     it("True deposit: success", async () => {
       //Approve for transfer outside token to LP-pool
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1000'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
 
       //Outside token transfered to LP-pool address and add stacked
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
       //Check staked
       await expect(
-        await lp_pool.connect(outside_token_owner).getAccountStacked(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getAccountStacked(outside_token.address)
       ).to.be.equal(parseEther('993'));
 
       await expect(
-        await lp_pool.connect(outside_token_owner).getTotalStacked(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getTotalStacked(outside_token.address)
       ).to.be.equal(parseEther('993'));
 
-      [sign, value] = await lp_pool.connect(outside_token_owner).getDailyStacked(outside_token.address);
+      [sign, value] = await lp_pool.connect(liquidity_provider).getDailyStacked(outside_token.address);
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('993'));
 
 
-      [sign, value] = await lp_pool.connect(outside_token_owner).getMissedProfit(outside_token.address);
+      [sign, value] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('0'));
 
       await expect(
-        await lp_pool.connect(outside_token_owner).getAvailableReward(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
       ).to.be.equal(0);
 
       //check lp-token accrual
       var lp_token_address = await lp_pool.connect(lp_pool_owner).getLPToken(outside_token.address);
       var lp_token = await LPToken.attach(lp_token_address)
       await expect(
-        await lp_token.connect(outside_token_owner).balanceOf(outside_token_owner.address)
+        await lp_token.connect(liquidity_provider).balanceOf(liquidity_provider.address)
       ).to.be.equal(parseEther('993'));
     });
   });
   describe("Withdraw funds", () => {
     it("Withdraw invalid token: fail", async () => {
       try {
-        await lp_pool.connect(outside_token_owner).withdraw(nullstr, parseEther('100'));
+        await lp_pool.connect(liquidity_provider).withdraw(nullstr, parseEther('100'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Token is invalid')
@@ -220,7 +214,7 @@ describe("Liquidity pool contract", () => {
     it("Withdraw disabled token: fail", async () => {
       await lp_pool.connect(lp_pool_owner).updatePool(outside_token.address, false);
       try {
-        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, parseEther('100'));
+        await lp_pool.connect(liquidity_provider).withdraw(outside_token.address, parseEther('100'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Token is not enabled')
@@ -228,10 +222,10 @@ describe("Liquidity pool contract", () => {
     });
 
     it("Withdraw invalid amount (0) of token: fail", async () => {
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('100'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('100'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('100'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('100'));
       try {
-        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, parseEther('0'));
+        await lp_pool.connect(liquidity_provider).withdraw(outside_token.address, parseEther('0'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Amount is invalid')
@@ -239,12 +233,12 @@ describe("Liquidity pool contract", () => {
     });
 
     it("Withdraw invalid amount (> deposited) of token: fail", async () => {
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1000'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1000'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
       //993 - stacked
       try {
-        await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, parseEther('994'));
+        await lp_pool.connect(liquidity_provider).withdraw(outside_token.address, parseEther('994'));
       }
       catch (e) {
         await expect(e.message).to.include('Pool: Amount is invalid')
@@ -253,36 +247,36 @@ describe("Liquidity pool contract", () => {
 
     it("True withdraw: success", async () => {
       //deposit token to  pool
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1000'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1000'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
       //approve lp_token to pool
-      lp_token_address = await lp_pool.connect(outside_token_owner).getLPToken(outside_token.address);
+      lp_token_address = await lp_pool.connect(liquidity_provider).getLPToken(outside_token.address);
       lp_token = await LPToken.attach(lp_token_address);
-      await lp_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('100'));
+      await lp_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('100'));
 
-      await lp_pool.connect(outside_token_owner).withdraw(outside_token.address, parseEther('100'));
+      await lp_pool.connect(liquidity_provider).withdraw(outside_token.address, parseEther('100'));
       //Check staked
       await expect(
-        await lp_pool.connect(outside_token_owner).getTotalStacked(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getTotalStacked(outside_token.address)
       ).to.be.equal(parseEther('893'));
 
       await expect(
-        await lp_pool.connect(outside_token_owner).getAccountStacked(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getAccountStacked(outside_token.address)
       ).to.be.equal(parseEther('893'));
 
-      [sign, value] = await lp_pool.connect(outside_token_owner).getDailyStacked(outside_token.address);
+      [sign, value] = await lp_pool.connect(liquidity_provider).getDailyStacked(outside_token.address);
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('893'));
 
       //check missed profit
-      [sign, value] = await lp_pool.connect(outside_token_owner).getMissedProfit(outside_token.address);
+      [sign, value] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('0'));
 
       // 893*7/993 = 6,295065458207451854 ethers
       await expect(
-        await lp_pool.connect(outside_token_owner).getAvailableReward(outside_token.address)
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
       ).to.be.equal("6295065458207451854");
     });
   });
@@ -361,8 +355,8 @@ describe("Liquidity pool contract", () => {
     it("Borrow invalid amount (> stacked): fail", async () => {
       //deposit token to  pool
       //993 - staked
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1000'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1000'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
       // Grant role for borrower
       var borrower_role = await lp_pool.BORROWER_ROLE();
@@ -384,8 +378,8 @@ describe("Liquidity pool contract", () => {
     it("Invalid profit amount (< premium_coeff): fail", async () => {
       //deposit token to  pool
       //993 - staked
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1000'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1000'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
       // Grant role for borrower
       var borrower_role = await lp_pool.BORROWER_ROLE();
@@ -406,17 +400,17 @@ describe("Liquidity pool contract", () => {
     });
 
 
-    it("Borrow funds: success", async () => {
+    it("Flash loan funds: success", async () => {
       //deposit token to  pool
       //1000.994 - staked
-      await outside_token.connect(outside_token_owner).approve(lp_pool.address, parseEther('1008'));
-      await lp_pool.connect(outside_token_owner).deposit(outside_token.address, parseEther('1008'));
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1008'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1008'));
       // Grant role for borrower
       var borrower_role = await lp_pool.BORROWER_ROLE();
       await lp_pool.connect(lp_pool_owner).grantRole(borrower_role, borrower.address);
 
       // premium from flash loan receiver = 12
-      await outside_token.connect(outside_token_owner).transfer(fl_receiver.address, parseEther('12'));
+      await outside_token.connect(liquidity_provider).transfer(fl_receiver.address, parseEther('12'));
 
       await lp_pool.connect(borrower).flashLoan(
         fl_receiver.address,
@@ -431,5 +425,81 @@ describe("Liquidity pool contract", () => {
         await lp_pool.connect(borrower).getTotalProfit(outside_token.address)
       ).to.be.equal(parseEther("19.056"));
     });
+  });
+
+  describe("Claim reward", () => {
+    it("Claim disabled token: fail", async () => {
+      await lp_pool.connect(lp_pool_owner).updatePool(outside_token.address, false);
+      try {
+        await lp_pool.connect(borrower).claimReward(outside_token.address, parseEther('100'));
+      } catch (e) {
+        await expect(e.message).to.include('Pool: Token is not enabled');
+      };
+    });
+
+    it("Claim invalid amount token (0): fail", async () => {
+      try {
+        await lp_pool.connect(borrower).claimReward(outside_token.address, 0);
+      } catch (e) {
+        await expect(e.message).to.include("Pool: Amount should be less or equal then available reward");
+      };
+    });
+
+    it("Claim invalid amount token (> available reward): fail", async () => {
+      try {
+        await lp_pool.connect(borrower).claimReward(outside_token.address, parseEther('100'));
+      } catch (e) {
+        await expect(e.message).to.include("Pool: Amount should be less or equal then available reward");
+      };
+    });
+
+    it("Claim reward: success", async () => {
+      //deposit token to  pool
+      //staked = 993, profit = 7, tps_amount = 7/993
+      await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
+      await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
+
+      await lp_pool.connect(liquidity_provider).calcAvailableReward(outside_token.address);
+      available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
+      console.log(available_reward);
+
+      [sign, missed_profit] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
+      console.log(sign, missed_profit);
+
+      // Grant role for borrower
+      var borrower_role = await lp_pool.BORROWER_ROLE();
+      await lp_pool.connect(lp_pool_owner).grantRole(borrower_role, borrower.address);
+
+      // flash loan premium = 6
+      await outside_token.connect(liquidity_provider).transfer(fl_receiver.address, parseEther('6'));
+      await lp_pool.connect(borrower).flashLoan(
+        fl_receiver.address,
+        outside_token.address,
+        parseEther("500"),
+        parseEther("6"),
+        []
+      );
+
+      // Total profit = 13
+      // Available reward = 993*13/993 - 0 - 0 = 13
+      await lp_pool.connect(liquidity_provider).calcAvailableReward(outside_token.address);
+      available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
+      console.log(available_reward);
+
+      //await expect(
+      //  available_reward
+      //).to.be.equal(parseEther("13"));
+
+      //await lp_pool.connect(liquidity_provider).claimReward(outside_token.address, parseEther('13'));
+      //available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
+      //console.log(available_reward);
+
+      /*await expect(
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
+      ).to.be.equal(0);
+      await expect(
+        await lp_pool.connect(liquidity_provider).getClaimedReward(outside_token.address)
+      ).to.be.equal(parseEthers("13"));*/
+    })
   });
 });
