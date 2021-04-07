@@ -42,7 +42,7 @@ interface ICitadelPool {
 
     function claimReward(IBEP20 token, uint256 amount) external;
 
-    function calcAvailableReward(IBEP20 token) external;
+    //function calcAvailableReward(IBEP20 token) external;
 
     function transferLPtoken(address sender, address recipient, uint256 amount) external;
 

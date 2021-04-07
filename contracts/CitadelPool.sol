@@ -45,13 +45,13 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param missed_profit Missed profit increased on deposit_amount*prev_tps_amount when funds are deposited, and decreased when funds are withdrawal
      * @param sign_missed_profit Sign of missed profit amount 0 - positive, 1 - negative
      * @param claimed_reward Total amount of claimed rewards
-     * @param available_reward Amount of available rewards
+     * param available_reward Amount of available rewards
      */
     struct Stake {
         uint256 total_stacked;
         uint256 missed_profit;
         uint256 claimed_reward;
-        uint256 available_reward;
+        //uint256 available_reward;
         bool sign_missed_profit;
     }
 
@@ -159,6 +159,10 @@ contract CitadelPool is ICitadelPool, AccessControl {
         return liquidity_pool[token].lp_token;
     }
 
+    function get_tps_amount(IBEP20 token) public view returns (uint256) {
+        return liquidity_pool[token].tps_amount;
+    }
+
     /**
      * @notice Total staked liquidity
      * @param token Address of BEP20 token
@@ -240,7 +244,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         override
         returns (uint256)
     {
-        return user_stacked[token][_msgSender()].available_reward;
+        return get_available_reward(user_stacked[token][_msgSender()], liquidity_pool[token].tps_amount);
     }
 
     /**
@@ -381,12 +385,10 @@ contract CitadelPool is ICitadelPool, AccessControl {
         pool.total_stacked = pool.total_stacked.add(stacked_amount);
         account.total_stacked = account.total_stacked.add(stacked_amount);
         add_daily_stacked(pool, stacked_amount);
-
         add_missed_profit(
             account,
             stacked_amount.mul(pool.prev_tps_amount).div(1e18)
         );
-        calc_available_reward(account, pool.tps_amount);
         add_profit(pool, premium);
 
         //Mint missed amount of LP-tokens
@@ -418,7 +420,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
         account.total_stacked = account.total_stacked.sub(amount);
         sub_daily_stacked(pool, amount);
         sub_missed_profit(account, amount.mul(pool.prev_tps_amount).div(1e18));
-        calc_available_reward(account, pool.tps_amount);
         //receive lp-tokens
         pool.lp_token.transferFrom(_msgSender(), address(this), amount);
         //send outside tokens
@@ -435,13 +436,11 @@ contract CitadelPool is ICitadelPool, AccessControl {
         LiquidityPool storage pool = liquidity_pool[token];
         require(pool.enabled, "Pool: Token is not enabled");
         Stake storage account = user_stacked[token][_msgSender()];
-        calc_available_reward(account, pool.tps_amount);
         require(
-            amount > 0 && amount <= account.available_reward,
+            amount > 0 && amount <= get_available_reward(account, pool.tps_amount),
             "Pool: Amount should be less or equal then available reward"
         );
         account.claimed_reward = account.claimed_reward.add(amount);
-        calc_available_reward(account, pool.tps_amount);
 
         token.transfer(_msgSender(), amount);
         //FIXME: calc amount of CTL tokens transferred to liquidity provider
@@ -450,14 +449,6 @@ contract CitadelPool is ICitadelPool, AccessControl {
         ctl_token.transfer(_msgSender(), ctl_amount);
         emit Rewarded(_msgSender(), token, amount);
     }
-
-    /**
-     * @notice Recalc available rewards for account
-     * @param token Address of BEP20 token
-     */
-     function calcAvailableReward(IBEP20 token) public override {
-        calc_available_reward(user_stacked[token][_msgSender()], liquidity_pool[token].tps_amount);
-     }
 
     /**
      * @notice Recalc pool state when LP-tokens transferred, this function called from LP-token contract
@@ -479,23 +470,23 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
         Stake storage account_s = user_stacked[token][sender];
         uint256 percent = amount.mul(1e18).div(account_s.total_stacked);
-        uint256 available_reward =
-            account_s.available_reward.mul(percent).div(1e18);
+        /*uint256 available_reward =
+            account_s.available_reward.mul(percent).div(1e18);*/
         uint256 claimed_reward =
             account_s.claimed_reward.mul(percent).div(1e18);
         uint256 missed_profit = account_s.missed_profit.mul(percent).div(1e18);
         account_s.total_stacked = account_s.total_stacked.sub(amount);
-        account_s.available_reward = account_s.available_reward.sub(
+        /*account_s.available_reward = account_s.available_reward.sub(
             available_reward
-        );
+        );*/
         account_s.claimed_reward = account_s.claimed_reward.sub(claimed_reward);
         account_s.missed_profit = account_s.missed_profit.sub(missed_profit);
 
         Stake storage account_r = user_stacked[token][recipient];
         account_r.total_stacked = account_r.total_stacked.add(amount);
-        account_r.available_reward = account_r.available_reward.add(
+        /*account_r.available_reward = account_r.available_reward.add(
             available_reward
-        );
+        );*/
         account_r.claimed_reward = account_r.claimed_reward.add(claimed_reward);
         //FIXME: test it!
         if (account_s.sign_missed_profit) {
@@ -586,7 +577,7 @@ contract CitadelPool is ICitadelPool, AccessControl {
         check_current_day_and_update_pool(pool);
         pool.receipt_profit = pool.receipt_profit.add(premium);
         pool.total_profit = pool.total_profit.add(premium);
-        pool.tps_amount = pool.tps_amount.add(
+        pool.tps_amount = pool.prev_tps_amount.add(
             pool.receipt_profit.mul(1e18).div(pool.total_stacked)
         );
     }
@@ -634,23 +625,21 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param account Users stake storage reference
      * @param tps_amount Current total per staked amount
      */
-    function calc_available_reward(Stake storage account, uint256 tps_amount)
+    function get_available_reward(Stake storage account, uint256 tps_amount)
         internal
+        view
+        returns (uint256)
     {
-        account.available_reward = account
-            .total_stacked
-            .mul(tps_amount)
-            .div(1e18)
-            .sub(account.claimed_reward);
+        uint256 available_reward =
+            (account.total_stacked.mul(tps_amount).div(1e18)).sub(
+                account.claimed_reward
+            );
         if (!account.sign_missed_profit) {
-            account.available_reward = account.available_reward.sub(
-                account.missed_profit
-            );
+            available_reward = available_reward.sub(account.missed_profit);
         } else {
-            account.available_reward = account.available_reward.add(
-                account.missed_profit
-            );
+            available_reward = available_reward.add(account.missed_profit);
         }
+        return available_reward;
     }
 
     /**

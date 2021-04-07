@@ -189,9 +189,9 @@ describe("Liquidity pool contract", () => {
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('0'));
 
-      await expect(
-        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
-      ).to.be.equal(0);
+      //await expect(
+      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
+      //).to.be.equal(parseEther('7'));
 
       //check lp-token accrual
       var lp_token_address = await lp_pool.connect(lp_pool_owner).getLPToken(outside_token.address);
@@ -459,12 +459,21 @@ describe("Liquidity pool contract", () => {
       await outside_token.connect(liquidity_provider).approve(lp_pool.address, parseEther('1000'));
       await lp_pool.connect(liquidity_provider).deposit(outside_token.address, parseEther('1000'));
 
-      await lp_pool.connect(liquidity_provider).calcAvailableReward(outside_token.address);
-      available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
-      console.log(available_reward);
+      await expect(
+        await lp_pool.connect(liquidity_provider).getTotalStacked(outside_token.address)
+      ).to.be.equal(parseEther("993"));
+
+      await expect(
+        await lp_pool.connect(liquidity_provider).getTotalProfit(outside_token.address)
+      ).to.be.equal(parseEther("7"));
+
+      //await expect(
+      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
+      //).to.be.equal(parseEther("7"));
 
       [sign, missed_profit] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
-      console.log(sign, missed_profit);
+      await expect(sign).to.be.equal(false);
+      await expect(missed_profit).to.be.equal(0);
 
       // Grant role for borrower
       var borrower_role = await lp_pool.BORROWER_ROLE();
@@ -480,26 +489,21 @@ describe("Liquidity pool contract", () => {
         []
       );
 
-      // Total profit = 13
-      // Available reward = 993*13/993 - 0 - 0 = 13
-      await lp_pool.connect(liquidity_provider).calcAvailableReward(outside_token.address);
-      available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
-      console.log(available_reward);
+      await expect(
+        await lp_pool.connect(liquidity_provider).getTotalStacked(outside_token.address)
+      ).to.be.equal(parseEther("993"));
+
+      await expect(
+        await lp_pool.connect(liquidity_provider).getTotalProfit(outside_token.address)
+      ).to.be.equal(parseEther("13"));
 
       //await expect(
-      //  available_reward
+      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
       //).to.be.equal(parseEther("13"));
 
-      //await lp_pool.connect(liquidity_provider).claimReward(outside_token.address, parseEther('13'));
-      //available_reward = await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address);
-      //console.log(available_reward);
-
-      /*await expect(
-        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
-      ).to.be.equal(0);
-      await expect(
-        await lp_pool.connect(liquidity_provider).getClaimedReward(outside_token.address)
-      ).to.be.equal(parseEthers("13"));*/
+      [sign, missed_profit] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
+      await expect(sign).to.be.equal(false);
+      await expect(missed_profit).to.be.equal(0);
     })
   });
 });
