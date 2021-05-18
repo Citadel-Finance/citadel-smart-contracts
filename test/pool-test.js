@@ -1,10 +1,15 @@
 const Web3 = require("web3");
 const web3 = new Web3("");
-const { expect, assert } = require("chai");
-const { ethers, waffle } = require("hardhat");
+const { expect } = require("chai");
+const { ethers } = require("hardhat");
 require("@nomiclabs/hardhat-waffle");
 const { parseEther } = require("ethers/utils");
 //ethers.provider.send("evm_setNextBlockTimestamp", [time + 10000]);
+// evm_increaseTime
+// evm_mine
+// evm_revert
+// evm_snapshot
+// evm_setNextBlockTimestamp - this method works like evm_increaseTime, but takes the exact timestamp that you want in the next block, and increases the time accordingly.
 
 const nullstr = "0x0000000000000000000000000000000000000000"
 let liquidity_provider;
@@ -189,9 +194,9 @@ describe("Liquidity pool contract", () => {
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('0'));
 
-      //await expect(
-      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
-      //).to.be.equal(parseEther('7'));
+      await expect(
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address) / 1e18
+      ).to.be.equal(7);
 
       //check lp-token accrual
       var lp_token_address = await lp_pool.connect(lp_pool_owner).getLPToken(outside_token.address);
@@ -274,7 +279,8 @@ describe("Liquidity pool contract", () => {
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('0'));
 
-      // 893*7/993 = 6,295065458207451854 ethers
+      // FIXME:
+      // 893*7/993 = 6,295065458207452165 (6,295065458207451854 in EVM?) ethers
       await expect(
         await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
       ).to.be.equal("6295065458207451854");
@@ -467,9 +473,9 @@ describe("Liquidity pool contract", () => {
         await lp_pool.connect(liquidity_provider).getTotalProfit(outside_token.address)
       ).to.be.equal(parseEther("7"));
 
-      //await expect(
-      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
-      //).to.be.equal(parseEther("7"));
+      await expect(
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)/1e18
+      ).to.be.equal(7);
 
       [sign, missed_profit] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
       await expect(sign).to.be.equal(false);
@@ -497,9 +503,9 @@ describe("Liquidity pool contract", () => {
         await lp_pool.connect(liquidity_provider).getTotalProfit(outside_token.address)
       ).to.be.equal(parseEther("13"));
 
-      //await expect(
-      //  await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)
-      //).to.be.equal(parseEther("13"));
+      await expect(
+        await lp_pool.connect(liquidity_provider).getAvailableReward(outside_token.address)/1e18
+      ).to.be.equal(13);
 
       [sign, missed_profit] = await lp_pool.connect(liquidity_provider).getMissedProfit(outside_token.address);
       await expect(sign).to.be.equal(false);

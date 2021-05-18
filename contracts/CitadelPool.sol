@@ -45,13 +45,11 @@ contract CitadelPool is ICitadelPool, AccessControl {
      * @param missed_profit Missed profit increased on deposit_amount*prev_tps_amount when funds are deposited, and decreased when funds are withdrawal
      * @param sign_missed_profit Sign of missed profit amount 0 - positive, 1 - negative
      * @param claimed_reward Total amount of claimed rewards
-     * param available_reward Amount of available rewards
      */
     struct Stake {
         uint256 total_stacked;
         uint256 missed_profit;
         uint256 claimed_reward;
-        //uint256 available_reward;
         bool sign_missed_profit;
     }
 
@@ -470,23 +468,15 @@ contract CitadelPool is ICitadelPool, AccessControl {
 
         Stake storage account_s = user_stacked[token][sender];
         uint256 percent = amount.mul(1e18).div(account_s.total_stacked);
-        /*uint256 available_reward =
-            account_s.available_reward.mul(percent).div(1e18);*/
         uint256 claimed_reward =
             account_s.claimed_reward.mul(percent).div(1e18);
         uint256 missed_profit = account_s.missed_profit.mul(percent).div(1e18);
         account_s.total_stacked = account_s.total_stacked.sub(amount);
-        /*account_s.available_reward = account_s.available_reward.sub(
-            available_reward
-        );*/
         account_s.claimed_reward = account_s.claimed_reward.sub(claimed_reward);
         account_s.missed_profit = account_s.missed_profit.sub(missed_profit);
 
         Stake storage account_r = user_stacked[token][recipient];
         account_r.total_stacked = account_r.total_stacked.add(amount);
-        /*account_r.available_reward = account_r.available_reward.add(
-            available_reward
-        );*/
         account_r.claimed_reward = account_r.claimed_reward.add(claimed_reward);
         //FIXME: test it!
         if (account_s.sign_missed_profit) {
