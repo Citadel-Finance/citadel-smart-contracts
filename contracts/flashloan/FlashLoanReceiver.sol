@@ -4,7 +4,7 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../interfaces/IFlashLoanReceiver.sol";
-import "../interfaces/ICitadelPool.sol";
+import "../interfaces/ILPToken.sol";
 import "../interfaces/IBEP20.sol";
 
 /** 
@@ -16,9 +16,9 @@ import "../interfaces/IBEP20.sol";
 contract FlashLoanReceiver is IFlashLoanReceiver {
     using SafeMath for uint256;
 
-    ICitadelPool public immutable pool;
+    ILPToken public immutable pool;
 
-    constructor(ICitadelPool pool_) {
+    constructor(ILPToken pool_) {
         pool = pool_;
     }
 
@@ -31,7 +31,7 @@ contract FlashLoanReceiver is IFlashLoanReceiver {
         uint256 premium,
         address initiator,
         bytes calldata params
-    ) external override returns (bool) {
+    ) public override returns (bool) {
         //
         // This contract now has the funds requested.
         // Your logic goes here.

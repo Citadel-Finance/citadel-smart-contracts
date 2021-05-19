@@ -17,6 +17,7 @@ contract CTLToken is IBEP20, Ownable {
     uint256 private _decimals;
     string private _symbol;
     string private _name;
+    bool private _mintDisabled;
 
     constructor(
         string memory name_,
@@ -92,7 +93,7 @@ contract CTLToken is IBEP20, Ownable {
         override
         returns (bool)
     {
-        _transfer(_msgSender(), recipient, amount);
+        _transfer(msg.sender, recipient, amount);
         return true;
     }
 
@@ -122,7 +123,7 @@ contract CTLToken is IBEP20, Ownable {
         override
         returns (bool)
     {
-        _approve(_msgSender(), spender, amount);
+        _approve(msg.sender, spender, amount);
         return true;
     }
 
@@ -143,12 +144,11 @@ contract CTLToken is IBEP20, Ownable {
         address recipient,
         uint256 amount
     ) public virtual override returns (bool) {
-        require(recipient == _msgSender(), "Recipient is not contract caller");
         _transfer(sender, recipient, amount);
         _approve(
             sender,
             recipient,
-            _allowances[sender][recipient].sub(
+            _allowances[sender][msg.sender].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
             )
@@ -174,9 +174,9 @@ contract CTLToken is IBEP20, Ownable {
         returns (bool)
     {
         _approve(
-            _msgSender(),
+            msg.sender,
             spender,
-            _allowances[_msgSender()][spender].add(addedValue)
+            _allowances[msg.sender][spender].add(addedValue)
         );
         return true;
     }
@@ -201,9 +201,9 @@ contract CTLToken is IBEP20, Ownable {
         returns (bool)
     {
         _approve(
-            _msgSender(),
+            msg.sender,
             spender,
-            _allowances[_msgSender()][spender].sub(
+            _allowances[msg.sender][spender].sub(
                 subtractedValue,
                 "BEP20: decreased allowance below zero"
             )
@@ -220,7 +220,12 @@ contract CTLToken is IBEP20, Ownable {
      * - `msg.sender` must be the token owner
      */
     function mint(uint256 amount) public virtual onlyOwner returns (bool) {
-        _mint(_msgSender(), amount);
+        _mint(msg.sender, amount);
+        return true;
+    }
+
+    function stopMint() public onlyOwner returns (bool) {
+        _mintDisabled = true;
         return true;
     }
 
@@ -266,7 +271,10 @@ contract CTLToken is IBEP20, Ownable {
     function _mint(address account, uint256 amount) internal virtual {
         require(account != address(0), "BEP20: mint to the zero address");
         _totalSupply = _totalSupply.add(amount);
-        require(_totalSupply<=_maxTotalSupply, "Total supply reached maximum");
+        require(
+            _totalSupply <= _maxTotalSupply,
+            "Total supply reached maximum"
+        );
 
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
@@ -329,8 +337,8 @@ contract CTLToken is IBEP20, Ownable {
         _burn(account, amount);
         _approve(
             account,
-            _msgSender(),
-            _allowances[account][_msgSender()].sub(
+            msg.sender,
+            _allowances[account][msg.sender].sub(
                 amount,
                 "BEP20: burn amount exceeds allowance"
             )

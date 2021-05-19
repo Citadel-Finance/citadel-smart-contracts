@@ -2,12 +2,15 @@
 
 pragma solidity ^0.7.0;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interfaces/IBEP20.sol";
 import "./interfaces/ICitadelPool.sol";
+import "./interfaces/ILPToken.sol";
+import "./interfaces/IFlashLoanReceiver.sol";
 
-contract LPToken is IBEP20, Ownable {
+contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
@@ -17,17 +20,84 @@ contract LPToken is IBEP20, Ownable {
     string private _symbol;
     string private _name;
 
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER");
+
+    /**
+     * @dev State of liquidity pool
+     */
+
+    /// @dev Current day from start time
+    uint256 public curDay;
+
+    /// @dev Pools start time
+    uint256 startTime;
+
+    /// @dev APY tax percent
+    uint256 apyTax;
+
+    /// @dev Profit for current day, is reset to zero every day
+    uint256 public receiptProfit;
+
+    /// @dev Total given premium
+    uint256 public totalProfit;
+
+    /// @dev Tokens per staked amount
+    uint256 public tps;
+
+    /// @dev prevTps Tokens per staked amount for previously day
+    uint256 public prevTps;
+
+    /// @dev Balance of tokens
+    uint256 public totalStacked;
+
+    /// @dev Balance of tokens for current day, it reset to zero every day
+    uint256 private _dailyStacked;
+    /// @dev Sign of daily stacked tokens, false - positive, true - negative
+    bool private _signDailyStacked;
+
+    /// @dev Borrowed funds amount
+    uint256 public borrowed;
+
+    /// @dev Returned funds amount
+    uint256 public returned;
+
+    /// @dev Minimal premium percent
+    uint256 premiumCoeff;
+
+    /// @dev true - enabled pool, false - disabled pool
+    bool public enabled;
+
+    /// @dev Outside token address
+    IBEP20 public token;
+
+    /// @dev CTL-token address
+    IBEP20 ctlToken;
+
+    mapping(address => Stake) public userStacked;
+
+    mapping(address => Loan) public userLoaned;
+
     constructor(
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        address lp_pool_
+        IBEP20 token_,
+        IBEP20 ctlToken_,
+        uint256 startTime_,
+        uint256 apyTax_,
+        uint256 premiumCoeff_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
         _totalSupply = 0;
-        transferOwnership(lp_pool_);
+        token = token_;
+        ctlToken = ctlToken_;
+        startTime = startTime_;
+        apyTax = apyTax_;
+        premiumCoeff = premiumCoeff_;
+        enabled = true;
     }
 
     /**
@@ -92,11 +162,41 @@ contract LPToken is IBEP20, Ownable {
         override
         returns (bool)
     {
-        _transfer(_msgSender(), recipient, amount);
-        if (_msgSender() != owner()) {
-            ICitadelPool(owner()).transferLPtoken(_msgSender(), recipient, amount);
-        }
+        _transfer(msg.sender, recipient, amount);
+        _transferLPtoken(msg.sender, recipient, amount);
         return true;
+    }
+
+    /**
+     * @notice Recalc pool state when LP-tokens transferred, this function called from LP-token contract
+     * @param sender Senders address of LP-tokens
+     * @param recipient Recipient address
+     * @param amount Funds amount
+     */
+    function _transferLPtoken(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) internal {
+        require(enabled, "Pool: Pool disabled");
+
+        Stake storage accountS = userStacked[sender];
+        uint256 percent = amount.mul(1e18).div(accountS.totalStacked);
+        uint256 claimedReward = accountS.claimedReward.mul(percent).div(1e18);
+        uint256 missedProfit = accountS.missedProfit.mul(percent).div(1e18);
+        accountS.totalStacked = accountS.totalStacked.sub(amount);
+        accountS.claimedReward = accountS.claimedReward.sub(claimedReward);
+        accountS.missedProfit = accountS.missedProfit.sub(missedProfit);
+
+        Stake storage accountR = userStacked[recipient];
+        accountR.totalStacked = accountR.totalStacked.add(amount);
+        accountR.claimedReward = accountR.claimedReward.add(claimedReward);
+        //FIXME: test it!
+        if (accountS.signMissedProfit) {
+            _subMissedProfit(recipient, missedProfit);
+        } else {
+            _addMissedProfit(recipient, missedProfit);
+        }
     }
 
     /**
@@ -125,7 +225,7 @@ contract LPToken is IBEP20, Ownable {
         override
         returns (bool)
     {
-        _approve(_msgSender(), spender, amount);
+        _approve(msg.sender, spender, amount);
         return true;
     }
 
@@ -146,20 +246,16 @@ contract LPToken is IBEP20, Ownable {
         address recipient,
         uint256 amount
     ) public virtual override returns (bool) {
-        require(recipient == _msgSender(), "Recipient is not contract caller");
         _transfer(sender, recipient, amount);
         _approve(
             sender,
             recipient,
-            _allowances[sender][recipient].sub(
+            _allowances[sender][msg.sender].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
             )
         );
-
-        if (_msgSender() != owner()) {
-            ICitadelPool(owner()).transferLPtoken(sender, recipient, amount);
-        }
+        _transferLPtoken(sender, recipient, amount);
         return true;
     }
 
@@ -177,13 +273,13 @@ contract LPToken is IBEP20, Ownable {
      */
     function increaseAllowance(address spender, uint256 addedValue)
         public
-        virtual
+        override
         returns (bool)
     {
         _approve(
-            _msgSender(),
+            msg.sender,
             spender,
-            _allowances[_msgSender()][spender].add(addedValue)
+            _allowances[msg.sender][spender].add(addedValue)
         );
         return true;
     }
@@ -204,13 +300,13 @@ contract LPToken is IBEP20, Ownable {
      */
     function decreaseAllowance(address spender, uint256 subtractedValue)
         public
-        virtual
+        override
         returns (bool)
     {
         _approve(
-            _msgSender(),
+            msg.sender,
             spender,
-            _allowances[_msgSender()][spender].sub(
+            _allowances[msg.sender][spender].sub(
                 subtractedValue,
                 "BEP20: decreased allowance below zero"
             )
@@ -218,17 +314,270 @@ contract LPToken is IBEP20, Ownable {
         return true;
     }
 
-    /**
-     * @dev Creates `amount` tokens and assigns them to `msg.sender`, increasing
-     * the total supply.
-     *
-     * Requirements
-     *
-     * - `msg.sender` must be the token owner
+    /** @notice Enable pool for staking and loans
      */
-    function mint(uint256 amount) public virtual onlyOwner returns (bool) {
-        _mint(_msgSender(), amount);
-        return true;
+    function enable() public override onlyOwner {
+        enabled = true;
+    }
+
+    /** @notice Disable pool for staking and loans
+     */
+    function disable() public override onlyOwner {
+        enabled = false;
+    }
+
+    /**
+     * @notice Daily staked liquidity
+     */
+    function dailyStacked() public view override returns (bool, uint256) {
+        return (_signDailyStacked, _dailyStacked);
+    }
+
+    /**
+     * @notice Get accounts available rewards
+     */
+    function availableReward() public view override returns (uint256) {
+        Stake storage account = userStacked[msg.sender];
+        uint256 available_reward = account.totalStacked.mul(tps).div(1e18);
+        if (!account.signMissedProfit) {
+            available_reward = available_reward.sub(account.missedProfit);
+        } else {
+            available_reward = available_reward.add(account.missedProfit);
+        }
+        available_reward = available_reward.sub(account.claimedReward);
+        return available_reward;
+    }
+
+    function updateApyTax(uint256 apyTax_) public override {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        apyTax = apyTax_;
+    }
+
+    function updatePremiumCoeff(uint256 premiumCoeff_) public override {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        premiumCoeff = premiumCoeff_;
+    }
+
+    function updateCTLTokenAddress(IBEP20 ctlToken_) public override {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        ctlToken = ctlToken_;
+    }
+
+    /**
+     * @notice Stake liquidity to pool
+     * @param amount Funds amount
+     */
+    function deposit(uint256 amount) public override {
+        require(enabled, "Pool: Pool disabled");
+        require(amount > 0, "Pool: Amount is invalid");
+
+        Stake storage account = userStacked[msg.sender];
+        uint256 premium = amount.mul(apyTax).div(1e18);
+        uint256 stacked = amount.sub(premium);
+        totalStacked = totalStacked.add(stacked);
+        account.totalStacked = account.totalStacked.add(stacked);
+        _addDailyStacked(stacked);
+        _addMissedProfit(msg.sender, stacked.mul(prevTps).div(1e18));
+        _addProfit(premium);
+
+        token.transferFrom(msg.sender, address(this), amount);
+        _mint(msg.sender, stacked);
+        emit Deposited(msg.sender, token, stacked);
+    }
+
+    /**
+     * @notice Withdraw funds from pool
+     * @param amount Funds amount
+     */
+    function withdraw(uint256 amount) public override {
+        require(enabled, "Pool: Pool disabled");
+        Stake storage account = userStacked[msg.sender];
+        require(
+            amount > 0 && amount <= account.totalStacked,
+            "Pool: Amount is invalid"
+        );
+        totalStacked = totalStacked.sub(amount);
+        account.totalStacked = account.totalStacked.sub(amount);
+        _subDailyStacked(amount);
+        _subMissedProfit(msg.sender, amount.mul(prevTps).div(1e18));
+
+        token.transfer(msg.sender, amount);
+        _burnFrom(msg.sender, amount);
+        emit Withdrew(msg.sender, token, amount);
+    }
+
+    /**
+     * @notice Withdraw rewards from pool in CTL tokens
+     * @param amount Rewards amount
+     */
+    function claimReward(uint256 amount) public override {
+        require(enabled, "Pool: Pool disabled");
+        Stake storage account = userStacked[msg.sender];
+        require(
+            amount > 0 && amount <= availableReward(),
+            "Pool: Amount should be less or equal then available reward"
+        );
+        account.claimedReward = account.claimedReward.add(amount);
+
+        token.transfer(msg.sender, amount);
+        //FIXME: calc amount of CTL tokens transferred to liquidity provider
+        // reward_amount * coinprice
+        uint256 ctlAmount = amount; //* coinprice
+        ctlToken.transfer(msg.sender, ctlAmount);
+        emit Rewarded(msg.sender, ctlAmount);
+    }
+
+    /**
+     * @notice Borrowers flash loan request
+     * @param receiver Address of flash loan receiver contract
+     * @param amount Funds amount
+     * @param params Parameters for flash loan receiver contract
+     */
+    function flashLoan(
+        address receiver,
+        uint256 amount,
+        uint256 premium,
+        bytes calldata params
+    ) public override {
+        require(
+            hasRole(BORROWER_ROLE, msg.sender),
+            "Pool: Caller is not a borrower"
+        );
+        require(enabled, "Pool: Pool disabled");
+        Loan storage loan = userLoaned[msg.sender];
+        require(!loan.lock, "Pool: reentrancy guard");
+        require(
+            amount > 0 && amount <= totalStacked,
+            "Pool: Amount is invalid"
+        );
+        require(
+            premium.mul(1e18).div(amount) >= premiumCoeff,
+            "Pool: Profit amount is invalid"
+        );
+        loan.lock = true;
+        borrowed = borrowed.add(amount);
+        loan.borrowed = loan.borrowed.add(amount);
+
+        token.transfer(receiver, amount);
+        IFlashLoanReceiver(receiver).executeOperation(
+            token,
+            amount,
+            premium,
+            msg.sender,
+            params
+        );
+        token.transferFrom(receiver, address(this), amount.add(premium));
+
+        _addProfit(premium);
+        returned = returned.add(amount);
+        loan.returned = loan.returned.add(amount);
+        loan.profit = loan.profit.add(premium);
+        loan.lock = false;
+        emit FlashLoan(msg.sender, receiver, amount, premium);
+    }
+
+    /**
+     * @notice Add deposit amount to liquidity pools daily staked
+     * @param amount Deposit amount
+     */
+    function _addDailyStacked(uint256 amount) internal {
+        //dailyStacked is negative
+        if (_signDailyStacked) {
+            if (_dailyStacked > amount) {
+                _dailyStacked = _dailyStacked.sub(amount);
+            } else {
+                _dailyStacked = amount.sub(_dailyStacked);
+                _signDailyStacked = false;
+            }
+        } else {
+            _dailyStacked = _dailyStacked.add(amount);
+        }
+    }
+
+    /**
+     * @notice Subtract withdraw amount from liquidity pools daily staked
+     * @param amount Withdraw amount
+     */
+    function _subDailyStacked(uint256 amount) internal {
+        //dailyStacked is positive
+        if (!_signDailyStacked) {
+            if (_dailyStacked >= amount) {
+                _dailyStacked = _dailyStacked.sub(amount);
+            } else {
+                _dailyStacked = amount.sub(_dailyStacked);
+                _signDailyStacked = true;
+            }
+        } else {
+            _dailyStacked = _dailyStacked.add(amount);
+        }
+    }
+
+    /**
+     * @notice Receipt profit set in zero and save tps for previous day one times per day
+     */
+    function _checkCurrentDayAndUpdatePool() internal {
+        uint256 day = 0;
+        if (block.timestamp > startTime) {
+            day = (block.timestamp.sub(startTime)).div(86400);
+        }
+        if (curDay != day) {
+            curDay = day;
+            receiptProfit = 0;
+            _dailyStacked = 0;
+            _signDailyStacked = false;
+            prevTps = tps;
+        }
+    }
+
+    /**
+     * @notice Add profit when premium distributed
+     * @param premium premium amount
+     */
+    function _addProfit(uint256 premium) internal {
+        _checkCurrentDayAndUpdatePool();
+        receiptProfit = receiptProfit.add(premium);
+        totalProfit = totalProfit.add(premium);
+        tps = prevTps.add(receiptProfit.mul(1e18).div(totalStacked));
+    }
+
+    /**
+     * @notice Recalc missed profit when user deposited or transfered funds
+     * @param user Address of account
+     * @param amount Profit amount
+     */
+    function _addMissedProfit(address user, uint256 amount) internal {
+        Stake storage account = userStacked[user];
+        //missedProfit is negative
+        if (account.signMissedProfit) {
+            if (account.missedProfit > amount) {
+                account.missedProfit = account.missedProfit.sub(amount);
+            } else {
+                account.missedProfit = amount.sub(account.missedProfit);
+                account.signMissedProfit = false;
+            }
+        } else {
+            account.missedProfit = account.missedProfit.add(amount);
+        }
+    }
+
+    /**
+     * @notice Recalc missed profit when user withdrawal or transfered funds
+     * @param user Address of account
+     * @param amount Profit amount
+     */
+    function _subMissedProfit(address user, uint256 amount) internal {
+        Stake storage account = userStacked[user];
+        //missedProfit is positive
+        if (!account.signMissedProfit) {
+            if (account.missedProfit >= amount) {
+                account.missedProfit = account.missedProfit.sub(amount);
+            } else {
+                account.missedProfit = amount.sub(account.missedProfit);
+                account.signMissedProfit = true;
+            }
+        } else {
+            account.missedProfit = account.missedProfit.add(amount);
+        }
     }
 
     /**
@@ -335,8 +684,8 @@ contract LPToken is IBEP20, Ownable {
         _burn(account, amount);
         _approve(
             account,
-            _msgSender(),
-            _allowances[account][_msgSender()].sub(
+            msg.sender,
+            _allowances[account][msg.sender].sub(
                 amount,
                 "BEP20: burn amount exceeds allowance"
             )

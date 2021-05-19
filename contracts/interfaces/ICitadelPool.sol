@@ -4,47 +4,79 @@ import "./IBEP20.sol";
 import "./ILPToken.sol";
 
 interface ICitadelPool {
-    function isPoolEnabled(IBEP20 token) external view returns (bool);
+    function dailyStacked() external view returns (bool, uint256);
 
-    function getLPToken(IBEP20 token) external view returns (ILPToken);
+    /**
+     * @dev State of users stake
+     * @param totalStacked Total staked added when funds are deposited, subtracted upon withdrawal
+     * @param missedProfit Missed profit increased on deposit_amount*prevTps when funds are deposited, and decreased when funds are withdrawal
+     * @param signMissedProfit Sign of missed profit amount 0 - positive, 1 - negative
+     * @param claimedReward Total amount of claimed rewards
+     */
+    struct Stake {
+        uint256 totalStacked;
+        uint256 missedProfit;
+        uint256 claimedReward;
+        bool signMissedProfit;
+    }
 
-    function getTotalStacked(IBEP20 token) external view returns (uint256);
+    /**
+     * @dev Loaned and returned funds and added profit
+     */
+    struct Loan {
+        uint256 borrowed;
+        uint256 returned;
+        uint256 profit;
+        bool lock;
+    }
 
-    function getDailyStacked(IBEP20 token) external view returns (bool, uint256);
+    function availableReward() external view returns (uint256);
 
-    function getTotalProfit(IBEP20 token) external view returns (uint256);
+    function enable() external;
 
-    function getAccountStacked(IBEP20 token) external view returns (uint256);
+    function disable() external;
 
-    function getMissedProfit(IBEP20 token) external view returns (bool, uint256);
+    function updateApyTax(uint256 apyTax_) external;
 
-    function getAvailableReward(IBEP20 token) external view returns (uint256);
-
-    function getClaimedReward(IBEP20 token) external view returns (uint256);
-
-    function getTotalLoans(IBEP20 token) external view returns (uint256, uint256);
-
-    function getBorrowerLoans(IBEP20 token) external view returns (uint256, uint256);
-
-    function getBorrowerProfit(IBEP20 token) external view returns (uint256);
-
-    function updatePool(IBEP20 token, bool enabled) external;
-
-    function updateApyTax(uint256 ape_tax_) external;
-
-    function updatePremiumCoeff(uint256 premium_coeff_) external;
+    function updatePremiumCoeff(uint256 premiumCoeff_) external;
 
     function updateCTLTokenAddress(IBEP20 token) external;
 
-    function deposit(IBEP20 token, uint256 amount) external;
+    function deposit(uint256 amount) external;
 
-    function withdraw(IBEP20 token, uint256 amount) external;
+    function withdraw(uint256 amount) external;
 
-    function claimReward(IBEP20 token, uint256 amount) external;
+    function claimReward(uint256 amount) external;
 
-    //function calcAvailableReward(IBEP20 token) external;
+    function flashLoan(
+        address receiver,
+        uint256 amount,
+        uint256 premium,
+        bytes calldata params
+    ) external;
 
-    function transferLPtoken(address sender, address recipient, uint256 amount) external;
+    /// @dev Event emitted when the depositor sends funds
+    event Deposited(
+        address indexed depositor,
+        IBEP20 indexed token,
+        uint256 amount
+    );
 
-    function flashLoan(address receiver, IBEP20 token, uint256 amount, uint256 premium, bytes calldata params) external;
+    /// @dev Event emitted when the depositor received funds
+    event Withdrew(
+        address indexed receiver,
+        IBEP20 indexed token,
+        uint256 amount
+    );
+
+    /// @dev Event emitted when the depositor claimed rewards
+    event Rewarded(address indexed borrower, uint256 amount);
+
+    /// @dev Event emitted when the borrower has borrowed and repaid funds
+    event FlashLoan(
+        address indexed user,
+        address indexed receiver,
+        uint256 amount,
+        uint256 premium
+    );
 }
