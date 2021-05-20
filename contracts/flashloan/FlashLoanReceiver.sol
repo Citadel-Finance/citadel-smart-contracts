@@ -4,7 +4,6 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../interfaces/IFlashLoanReceiver.sol";
-import "../interfaces/ILPToken.sol";
 import "../interfaces/IBEP20.sol";
 
 /** 
@@ -16,9 +15,9 @@ import "../interfaces/IBEP20.sol";
 contract FlashLoanReceiver is IFlashLoanReceiver {
     using SafeMath for uint256;
 
-    ILPToken public immutable pool;
+    address public immutable pool;
 
-    constructor(ILPToken pool_) {
+    constructor(address pool_) {
         pool = pool_;
     }
 

@@ -2,19 +2,20 @@
 pragma solidity ^0.7.0;
 import "./IBEP20.sol";
 import "./ILPToken.sol";
+import "../CTLToken.sol";
 
 interface ICitadelPool {
     function dailyStacked() external view returns (bool, uint256);
 
     /**
      * @dev State of users stake
-     * @param totalStacked Total staked added when funds are deposited, subtracted upon withdrawal
+     * @param totalStaked Total staked added when funds are deposited, subtracted upon withdrawal
      * @param missedProfit Missed profit increased on deposit_amount*prevTps when funds are deposited, and decreased when funds are withdrawal
      * @param signMissedProfit Sign of missed profit amount 0 - positive, 1 - negative
      * @param claimedReward Total amount of claimed rewards
      */
     struct Stake {
-        uint256 totalStacked;
+        uint256 totalStaked;
         uint256 missedProfit;
         uint256 claimedReward;
         bool signMissedProfit;
@@ -40,7 +41,7 @@ interface ICitadelPool {
 
     function updatePremiumCoeff(uint256 premiumCoeff_) external;
 
-    function updateCTLTokenAddress(IBEP20 token) external;
+    function updateCTLToken(CTLToken token) external;
 
     function deposit(uint256 amount) external;
 

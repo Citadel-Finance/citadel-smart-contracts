@@ -4,15 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "ganache-cli": "ganache-cli --allowUnlimitedContractSize",
     "compile": "npx hardhat compile",
     "test": "npx hardhat --network development test",
     "console": "npx hardhat console --network development",
-    "deploy-pool-develop": "npx hardhat run --network development scripts/deploy_pool.js",
-    "deploy-token-develop": "npx hardhat run --network development scripts/deploy_token.js",
-    "deploy-pool-bsc_test": "npx hardhat run --network bsc_test scripts/deploy_pool.js",
-    "deploy-token-bsc_test": "npx hardhat run --network bsc_test scripts/deploy_token.js",
-    "test-bsc_test": "npx hardhat --network bsc_test test"
+    "deploy-all-develop": "npx hardhat run --network development scripts/deploy_all.js",
+    "deploy-all-bsc_test": "npx hardhat run --network bsc_test scripts/deploy_all.js"
   },
   "author": "",
   "license": "ISC",

@@ -2,15 +2,12 @@
 
 pragma solidity ^0.7.0;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interfaces/IBEP20.sol";
 
-contract CTLToken is IBEP20, Ownable, AccessControl {
+contract OutsideToken is IBEP20, Ownable{
     using SafeMath for uint256;
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER");
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -20,7 +17,6 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
     uint256 private _decimals;
     string private _symbol;
     string private _name;
-    bool private _mintDisabled;
 
     constructor(
         string memory name_,
@@ -28,9 +24,6 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
         uint256 decimals_,
         uint256 maxTotalSupply_
     ) {
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(ADMIN_ROLE, msg.sender);
-        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
@@ -225,14 +218,8 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
      *
      * - `msg.sender` must be the token owner
      */
-    function mint(uint256 amount) public virtual returns (bool) {
-        require(hasRole(MINTER_ROLE, msg.sender), "CTL: FORBIDDEN");
+    function mint(uint256 amount) public virtual onlyOwner returns (bool) {
         _mint(msg.sender, amount);
-        return true;
-    }
-
-    function stopMint() public onlyOwner returns (bool) {
-        _mintDisabled = true;
         return true;
     }
 

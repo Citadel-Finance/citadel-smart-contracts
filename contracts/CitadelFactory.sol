@@ -6,46 +6,48 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/IBEP20.sol";
-import "./LPToken.sol";
+import "./CitadelPool.sol";
+import "./CTLToken.sol";
 
-contract LPFactory is AccessControl {
+contract CitadelFactory is AccessControl {
     using Address for address;
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
 
-    IBEP20 public ctlToken;
+    CTLToken public ctlToken;
 
-    constructor(IBEP20 ctlToken_) {
+    constructor(CTLToken ctlToken_) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(ADMIN_ROLE, msg.sender);
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         ctlToken = ctlToken_;
     }
 
-    mapping(IBEP20 => LPToken) public pools;
+    mapping(IBEP20 => CitadelPool) public pools;
 
     function addPool(
         IBEP20 token,
         uint256 startTime,
         uint256 apyTax,
-        uint256 premium
+        uint256 premiumCoeff
     ) public {
         require(
             hasRole(ADMIN_ROLE, msg.sender),
-            "LPFactory: Caller is not a admin"
+            "CitadelFactory: Caller is not a admin"
+        );
+        require(
+            pools[token] == CitadelPool(0),
+            "CitadelFactory: LP for this token already exist"
         );
         require(
             address(token).isContract(),
-            "LPFactory: Given address is not contract"
+            "CitadelFactory: Given address is not contract"
         );
-        require(
-            pools[token] == LPToken(0),
-            "LPFactory: LP for this token already exist"
-        );
+
         bytes32 salt = keccak256(abi.encodePacked(token));
         string memory name = string(abi.encodePacked("ct", token.name()));
         string memory symbol = string(abi.encodePacked("ct", token.symbol()));
-        LPToken pool =
-            new LPToken{salt: salt}(
+        CitadelPool pool =
+            new CitadelPool{salt: salt}(
                 name,
                 symbol,
                 token.decimals(),
@@ -53,7 +55,8 @@ contract LPFactory is AccessControl {
                 ctlToken,
                 startTime,
                 apyTax,
-                premium
+                premiumCoeff,
+                msg.sender
             );
         pools[token] = pool;
         emit Created(token, pool);
@@ -62,7 +65,7 @@ contract LPFactory is AccessControl {
     function disablePool(IBEP20 token) public {
         require(
             hasRole(ADMIN_ROLE, msg.sender),
-            "LPFactory: Caller is not a admin"
+            "CitadelFactory: Caller is not a admin"
         );
         pools[token].disable();
     }
@@ -70,7 +73,7 @@ contract LPFactory is AccessControl {
     function enablePool(IBEP20 token) public {
         require(
             hasRole(ADMIN_ROLE, msg.sender),
-            "LPFactory: Caller is not a admin"
+            "CitadelFactory: Caller is not a admin"
         );
         pools[token].enable();
     }
@@ -83,5 +86,5 @@ contract LPFactory is AccessControl {
         return pools[token].enabled();
     }
 
-    event Created(IBEP20 token, LPToken pool);
+    event Created(IBEP20 token, CitadelPool pool);
 }

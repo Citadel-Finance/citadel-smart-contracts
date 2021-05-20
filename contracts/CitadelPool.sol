@@ -5,12 +5,13 @@ pragma solidity ^0.7.0;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "./CTLToken.sol";
 import "./interfaces/IBEP20.sol";
 import "./interfaces/ICitadelPool.sol";
 import "./interfaces/ILPToken.sol";
 import "./interfaces/IFlashLoanReceiver.sol";
 
-contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
+contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
@@ -31,10 +32,10 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     uint256 public curDay;
 
     /// @dev Pools start time
-    uint256 startTime;
+    uint256 public startTime;
 
     /// @dev APY tax percent
-    uint256 apyTax;
+    uint256 public apyTax;
 
     /// @dev Profit for current day, is reset to zero every day
     uint256 public receiptProfit;
@@ -49,7 +50,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     uint256 public prevTps;
 
     /// @dev Balance of tokens
-    uint256 public totalStacked;
+    uint256 public totalStaked;
 
     /// @dev Balance of tokens for current day, it reset to zero every day
     uint256 private _dailyStacked;
@@ -63,7 +64,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     uint256 public returned;
 
     /// @dev Minimal premium percent
-    uint256 premiumCoeff;
+    uint256 public premiumCoeff;
 
     /// @dev true - enabled pool, false - disabled pool
     bool public enabled;
@@ -72,9 +73,9 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     IBEP20 public token;
 
     /// @dev CTL-token address
-    IBEP20 ctlToken;
+    CTLToken public ctlToken;
 
-    mapping(address => Stake) public userStacked;
+    mapping(address => Stake) public userStaked;
 
     mapping(address => Loan) public userLoaned;
 
@@ -83,10 +84,11 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         string memory symbol_,
         uint256 decimals_,
         IBEP20 token_,
-        IBEP20 ctlToken_,
+        CTLToken ctlToken_,
         uint256 startTime_,
         uint256 apyTax_,
-        uint256 premiumCoeff_
+        uint256 premiumCoeff_,
+        address admin
     ) {
         _name = name_;
         _symbol = symbol_;
@@ -98,6 +100,9 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         apyTax = apyTax_;
         premiumCoeff = premiumCoeff_;
         enabled = true;
+        _setupRole(DEFAULT_ADMIN_ROLE, admin);
+        _setupRole(ADMIN_ROLE, admin);
+        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
     }
 
     /**
@@ -162,8 +167,8 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         override
         returns (bool)
     {
-        _transfer(msg.sender, recipient, amount);
         _transferLPtoken(msg.sender, recipient, amount);
+        _transfer(msg.sender, recipient, amount);
         return true;
     }
 
@@ -180,16 +185,16 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
     ) internal {
         require(enabled, "Pool: Pool disabled");
 
-        Stake storage accountS = userStacked[sender];
-        uint256 percent = amount.mul(1e18).div(accountS.totalStacked);
+        Stake storage accountS = userStaked[sender];
+        uint256 percent = amount.mul(1e18).div(accountS.totalStaked);
         uint256 claimedReward = accountS.claimedReward.mul(percent).div(1e18);
         uint256 missedProfit = accountS.missedProfit.mul(percent).div(1e18);
-        accountS.totalStacked = accountS.totalStacked.sub(amount);
+        accountS.totalStaked = accountS.totalStaked.sub(amount);
         accountS.claimedReward = accountS.claimedReward.sub(claimedReward);
         accountS.missedProfit = accountS.missedProfit.sub(missedProfit);
 
-        Stake storage accountR = userStacked[recipient];
-        accountR.totalStacked = accountR.totalStacked.add(amount);
+        Stake storage accountR = userStaked[recipient];
+        accountR.totalStaked = accountR.totalStaked.add(amount);
         accountR.claimedReward = accountR.claimedReward.add(claimedReward);
         //FIXME: test it!
         if (accountS.signMissedProfit) {
@@ -337,8 +342,8 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
      * @notice Get accounts available rewards
      */
     function availableReward() public view override returns (uint256) {
-        Stake storage account = userStacked[msg.sender];
-        uint256 available_reward = account.totalStacked.mul(tps).div(1e18);
+        Stake storage account = userStaked[msg.sender];
+        uint256 available_reward = account.totalStaked.mul(tps).div(1e18);
         if (!account.signMissedProfit) {
             available_reward = available_reward.sub(account.missedProfit);
         } else {
@@ -358,7 +363,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         premiumCoeff = premiumCoeff_;
     }
 
-    function updateCTLTokenAddress(IBEP20 ctlToken_) public override {
+    function updateCTLToken(CTLToken ctlToken_) public override {
         require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
         ctlToken = ctlToken_;
     }
@@ -371,11 +376,11 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         require(enabled, "Pool: Pool disabled");
         require(amount > 0, "Pool: Amount is invalid");
 
-        Stake storage account = userStacked[msg.sender];
+        Stake storage account = userStaked[msg.sender];
         uint256 premium = amount.mul(apyTax).div(1e18);
         uint256 stacked = amount.sub(premium);
-        totalStacked = totalStacked.add(stacked);
-        account.totalStacked = account.totalStacked.add(stacked);
+        totalStaked = totalStaked.add(stacked);
+        account.totalStaked = account.totalStaked.add(stacked);
         _addDailyStacked(stacked);
         _addMissedProfit(msg.sender, stacked.mul(prevTps).div(1e18));
         _addProfit(premium);
@@ -391,18 +396,18 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
      */
     function withdraw(uint256 amount) public override {
         require(enabled, "Pool: Pool disabled");
-        Stake storage account = userStacked[msg.sender];
+        Stake storage account = userStaked[msg.sender];
         require(
-            amount > 0 && amount <= account.totalStacked,
+            amount > 0 && amount <= account.totalStaked,
             "Pool: Amount is invalid"
         );
-        totalStacked = totalStacked.sub(amount);
-        account.totalStacked = account.totalStacked.sub(amount);
+        totalStaked = totalStaked.sub(amount);
+        account.totalStaked = account.totalStaked.sub(amount);
         _subDailyStacked(amount);
         _subMissedProfit(msg.sender, amount.mul(prevTps).div(1e18));
 
+        _burn(msg.sender, amount);
         token.transfer(msg.sender, amount);
-        _burnFrom(msg.sender, amount);
         emit Withdrew(msg.sender, token, amount);
     }
 
@@ -412,7 +417,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
      */
     function claimReward(uint256 amount) public override {
         require(enabled, "Pool: Pool disabled");
-        Stake storage account = userStacked[msg.sender];
+        Stake storage account = userStaked[msg.sender];
         require(
             amount > 0 && amount <= availableReward(),
             "Pool: Amount should be less or equal then available reward"
@@ -446,10 +451,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         require(enabled, "Pool: Pool disabled");
         Loan storage loan = userLoaned[msg.sender];
         require(!loan.lock, "Pool: reentrancy guard");
-        require(
-            amount > 0 && amount <= totalStacked,
-            "Pool: Amount is invalid"
-        );
+        require(amount > 0 && amount <= totalStaked, "Pool: Amount is invalid");
         require(
             premium.mul(1e18).div(amount) >= premiumCoeff,
             "Pool: Profit amount is invalid"
@@ -537,7 +539,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
         _checkCurrentDayAndUpdatePool();
         receiptProfit = receiptProfit.add(premium);
         totalProfit = totalProfit.add(premium);
-        tps = prevTps.add(receiptProfit.mul(1e18).div(totalStacked));
+        tps = prevTps.add(receiptProfit.mul(1e18).div(totalStaked));
     }
 
     /**
@@ -546,7 +548,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
      * @param amount Profit amount
      */
     function _addMissedProfit(address user, uint256 amount) internal {
-        Stake storage account = userStacked[user];
+        Stake storage account = userStaked[user];
         //missedProfit is negative
         if (account.signMissedProfit) {
             if (account.missedProfit > amount) {
@@ -566,7 +568,7 @@ contract LPToken is ILPToken, Ownable, ICitadelPool, AccessControl {
      * @param amount Profit amount
      */
     function _subMissedProfit(address user, uint256 amount) internal {
-        Stake storage account = userStacked[user];
+        Stake storage account = userStaked[user];
         //missedProfit is positive
         if (!account.signMissedProfit) {
             if (account.missedProfit >= amount) {
