@@ -3,24 +3,24 @@
 pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interfaces/IBEP20.sol";
+import "./CitadelPool.sol";
 
-contract CTLToken is IBEP20, Ownable, AccessControl {
+contract CTLToken is IBEP20, AccessControl {
     using SafeMath for uint256;
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER");
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
-    uint256 private _maxTotalSupply;
+    uint256 public maxTotalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
-    bool private _mintDisabled;
+    bool public mintDisabled;
+    address private _owner;
 
     constructor(
         string memory name_,
@@ -29,19 +29,19 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
         uint256 maxTotalSupply_
     ) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(ADMIN_ROLE, msg.sender);
-        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        _maxTotalSupply = maxTotalSupply_;
+        maxTotalSupply = maxTotalSupply_;
+        _owner = msg.sender;
     }
 
     /**
      * @dev Returns the bep token owner.
      */
     function getOwner() public view virtual override returns (address) {
-        return owner();
+        return _owner;
     }
 
     /**
@@ -225,15 +225,28 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
      *
      * - `msg.sender` must be the token owner
      */
-    function mint(uint256 amount) public virtual returns (bool) {
+    function mint() public virtual returns (uint256) {
         require(hasRole(MINTER_ROLE, msg.sender), "CTL: FORBIDDEN");
-        _mint(msg.sender, amount);
-        return true;
+        if (mintDisabled){
+            return 0;
+        }
+        uint256 mintAvailable =
+            (block.number.sub(CitadelPool(msg.sender).prevMintingBlock())).mul(
+                CitadelPool(msg.sender).tokensPerBlock()
+            );
+
+        _mint(msg.sender, mintAvailable);
+        return mintAvailable;
     }
 
-    function stopMint() public onlyOwner returns (bool) {
-        _mintDisabled = true;
-        return true;
+    function stopMint() public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
+        mintDisabled = true;
+    }
+
+    function startMint() public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
+        mintDisabled = false;
     }
 
     /**
@@ -279,8 +292,8 @@ contract CTLToken is IBEP20, Ownable, AccessControl {
         require(account != address(0), "BEP20: mint to the zero address");
         _totalSupply = _totalSupply.add(amount);
         require(
-            _totalSupply <= _maxTotalSupply,
-            "Total supply reached maximum"
+            _totalSupply <= maxTotalSupply,
+            "CTL: Total supply reached maximum"
         );
 
         _balances[account] = _balances[account].add(amount);

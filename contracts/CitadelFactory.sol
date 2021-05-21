@@ -11,27 +11,24 @@ import "./CTLToken.sol";
 
 contract CitadelFactory is AccessControl {
     using Address for address;
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
 
     CTLToken public ctlToken;
+    mapping(IBEP20 => CitadelPool) public pools;
 
     constructor(CTLToken ctlToken_) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(ADMIN_ROLE, msg.sender);
-        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         ctlToken = ctlToken_;
     }
-
-    mapping(IBEP20 => CitadelPool) public pools;
 
     function addPool(
         IBEP20 token,
         uint256 startTime,
+        uint256 tokensPerBlock,
         uint256 apyTax,
         uint256 premiumCoeff
     ) public {
         require(
-            hasRole(ADMIN_ROLE, msg.sender),
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
             "CitadelFactory: Caller is not a admin"
         );
         require(
@@ -56,15 +53,17 @@ contract CitadelFactory is AccessControl {
                 startTime,
                 apyTax,
                 premiumCoeff,
+                tokensPerBlock,
                 msg.sender
             );
         pools[token] = pool;
+        ctlToken.grantRole(ctlToken.MINTER_ROLE(), address(pool));
         emit Created(token, pool);
     }
 
     function disablePool(IBEP20 token) public {
         require(
-            hasRole(ADMIN_ROLE, msg.sender),
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
             "CitadelFactory: Caller is not a admin"
         );
         pools[token].disable();
@@ -72,7 +71,7 @@ contract CitadelFactory is AccessControl {
 
     function enablePool(IBEP20 token) public {
         require(
-            hasRole(ADMIN_ROLE, msg.sender),
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
             "CitadelFactory: Caller is not a admin"
         );
         pools[token].enable();

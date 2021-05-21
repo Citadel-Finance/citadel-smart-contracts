@@ -3,7 +3,6 @@
 pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./CTLToken.sol";
 import "./interfaces/IBEP20.sol";
@@ -11,7 +10,7 @@ import "./interfaces/ICitadelPool.sol";
 import "./interfaces/ILPToken.sol";
 import "./interfaces/IFlashLoanReceiver.sol";
 
-contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
+contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
@@ -20,8 +19,8 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
     uint256 private _decimals;
     string private _symbol;
     string private _name;
+    address private _owner;
 
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
     bytes32 public constant BORROWER_ROLE = keccak256("BORROWER");
 
     /**
@@ -54,13 +53,11 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
 
     /// @dev Balance of tokens for current day, it reset to zero every day
     uint256 private _dailyStacked;
-    /// @dev Sign of daily stacked tokens, false - positive, true - negative
+    /// @dev Sign of daily staked tokens, false - positive, true - negative
     bool private _signDailyStacked;
 
-    /// @dev Borrowed funds amount
+    /// @dev Borrowed and funds amount
     uint256 public borrowed;
-
-    /// @dev Returned funds amount
     uint256 public returned;
 
     /// @dev Minimal premium percent
@@ -72,8 +69,13 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
     /// @dev Outside token address
     IBEP20 public token;
 
-    /// @dev CTL-token address
+    /// @dev CTL-token settings
+    /// @dev CTL-tokens per staked
     CTLToken public ctlToken;
+    uint256 public prevMintingBlock;
+    uint256 public tokensPerBlock;
+    uint256 ctps;
+    uint256 prevCtps;
 
     mapping(address => Stake) public userStaked;
 
@@ -88,6 +90,7 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
         uint256 startTime_,
         uint256 apyTax_,
         uint256 premiumCoeff_,
+        uint256 tokensPerBlock_,
         address admin
     ) {
         _name = name_;
@@ -99,17 +102,18 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
         startTime = startTime_;
         apyTax = apyTax_;
         premiumCoeff = premiumCoeff_;
+        tokensPerBlock = tokensPerBlock_;
         enabled = true;
+        _owner = msg.sender;
         _setupRole(DEFAULT_ADMIN_ROLE, admin);
-        _setupRole(ADMIN_ROLE, admin);
-        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+        prevMintingBlock = block.number;
     }
 
     /**
      * @dev Returns the bep token owner.
      */
     function getOwner() public view virtual override returns (address) {
-        return owner();
+        return _owner;
     }
 
     /**
@@ -320,14 +324,18 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
     }
 
     /** @notice Enable pool for staking and loans
+     * The factory owns the pool
      */
-    function enable() public override onlyOwner {
+    function enable() public override {
+        require(msg.sender == _owner, "Pool: FORBIDDEN");
         enabled = true;
     }
 
     /** @notice Disable pool for staking and loans
+     * The Citadel factory owns the pool
      */
-    function disable() public override onlyOwner {
+    function disable() public override {
+        require(msg.sender == _owner, "Pool: FORBIDDEN");
         enabled = false;
     }
 
@@ -354,17 +362,26 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
     }
 
     function updateApyTax(uint256 apyTax_) public override {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        require(
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "Pool: Caller is not a admin"
+        );
         apyTax = apyTax_;
     }
 
     function updatePremiumCoeff(uint256 premiumCoeff_) public override {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        require(
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "Pool: Caller is not a admin"
+        );
         premiumCoeff = premiumCoeff_;
     }
 
     function updateCTLToken(CTLToken ctlToken_) public override {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        require(
+            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "Pool: Caller is not a admin"
+        );
         ctlToken = ctlToken_;
     }
 
@@ -372,22 +389,27 @@ contract CitadelPool is ILPToken, ICitadelPool, Ownable, AccessControl {
      * @notice Stake liquidity to pool
      * @param amount Funds amount
      */
+    // FIXME: add minting and tps calc for deposit, withdraw, claim and loans
     function deposit(uint256 amount) public override {
         require(enabled, "Pool: Pool disabled");
         require(amount > 0, "Pool: Amount is invalid");
 
         Stake storage account = userStaked[msg.sender];
         uint256 premium = amount.mul(apyTax).div(1e18);
-        uint256 stacked = amount.sub(premium);
-        totalStaked = totalStaked.add(stacked);
-        account.totalStaked = account.totalStaked.add(stacked);
-        _addDailyStacked(stacked);
-        _addMissedProfit(msg.sender, stacked.mul(prevTps).div(1e18));
+        uint256 staked = amount.sub(premium);
+        totalStaked = totalStaked.add(staked);
+        account.totalStaked = account.totalStaked.add(staked);
+        _addDailyStacked(staked);
+        _addMissedProfit(msg.sender, staked.mul(prevTps).div(1e18));
         _addProfit(premium);
-
+        emit Deposited(msg.sender, token, staked);
+        uint256 minted = ctlToken.mint();
+        if (minted > 0) {
+            ctps = ctps.add(minted.mul(10**_decimals).div(totalStaked));
+        }
+        prevMintingBlock = block.number;
         token.transferFrom(msg.sender, address(this), amount);
-        _mint(msg.sender, stacked);
-        emit Deposited(msg.sender, token, stacked);
+        _mint(msg.sender, staked);
     }
 
     /**

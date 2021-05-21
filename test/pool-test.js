@@ -6,6 +6,7 @@ require("@nomiclabs/hardhat-waffle");
 const { parseEther } = require("ethers/utils");
 
 const nullstr = "0x0000000000000000000000000000000000000000"
+const tokensPerBlock = parseEther("1000");
 let liquidity_provider;
 let lp_pool_owner;
 let borrower;
@@ -50,8 +51,8 @@ describe("Liquidity pool contract", () => {
       8,
       parseEther(process.env.TOKEN_TOTAL_SUPPLY)
     );
-    await outside_token.deployed();
-    await outside_token.connect(liquidity_provider).mint(parseEther('1000000'));
+    await outside_token_8.deployed();
+    await outside_token_8.connect(liquidity_provider).mint(parseEther('1000000'));
 
     ctl_token = await CTLToken.deploy(
       process.env.TOKEN_NAME,
@@ -64,13 +65,13 @@ describe("Liquidity pool contract", () => {
     ctl_factory = await CitadelFactory.deploy(ctl_token.address);
     await ctl_factory.deployed();
 
-    await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
+    await ctl_token.grantRole(await ctl_token.DEFAULT_ADMIN_ROLE(), ctl_factory.address);
 
-    await ctl_factory.addPool(outside_token.address, start_time, parseEther('0.007'), parseEther('0.012'));
+    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
     let lp_pool_addr = await ctl_factory.pools(outside_token.address);
     ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
-    await ctl_factory.addPool(outside_token_8.address, start_time, parseEther('0.007'), parseEther('0.012'));
+    await ctl_factory.addPool(outside_token_8.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
     let lp_pool_8_addr = await ctl_factory.pools(outside_token_8.address);
     ctl_pool_8 = await CitadelPool.attach(lp_pool_8_addr);
 
@@ -79,14 +80,10 @@ describe("Liquidity pool contract", () => {
   });
 
   describe("Deployment", () => {
-    it("Should set the DEFAULT_ADMIN_ROLE and ADMIN_ROLE to creator", async () => {
+    it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
       let default_admin_role = await ctl_pool.DEFAULT_ADMIN_ROLE();
-      let admin_role = await ctl_pool.ADMIN_ROLE();
       expect(
         await ctl_pool.hasRole(default_admin_role, lp_pool_owner.address)
-      ).to.equal(true);
-      expect(
-        await ctl_pool.hasRole(admin_role, lp_pool_owner.address)
       ).to.equal(true);
       expect(
         await ctl_pool.apyTax()
@@ -105,7 +102,7 @@ describe("Liquidity pool contract", () => {
     it("Tokens whitelist may be set only admin: fail", async () => {
       let start_time = new Date().getTime();
       try {
-        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, parseEther('0.007'), parseEther('0.012'));
+        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
       }
       catch (e) {
         await expect(e.message).to.include('CitadelFactory: Caller is not a admin')

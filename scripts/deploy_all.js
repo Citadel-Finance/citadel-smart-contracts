@@ -1,11 +1,14 @@
 const hre = require("hardhat");
 const Web3 = require("web3");
 const web3 = new Web3("");
-fs = require('fs');
-
+const { parseEther } = require("ethers/utils");
 
 async function main() {
   require('dotenv').config();
+  const OutsideToken = await hre.ethers.getContractFactory("OutsideToken");
+  const outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
+  await outside_token.deployed();
+
   const CitadelToken = await hre.ethers.getContractFactory("CTLToken");
   const citadel_token = await CitadelToken.deploy(
     process.env.TOKEN_NAME,
@@ -19,10 +22,14 @@ async function main() {
   const CitadelFactory = await hre.ethers.getContractFactory("CitadelFactory");
   const citadel_factory = await CitadelFactory.deploy(citadel_token.address);
   await citadel_factory.deployed();
-
-  await citadel_token.grantRole(await citadel_token.ADMIN_ROLE(), citadel_factory.address);
-
   console.log("Factory address:", citadel_factory.address);
+
+  await citadel_token.grantRole(await citadel_token.DEFAULT_ADMIN_ROLE(), citadel_factory.address);
+
+  let start_time = new Date().getTime();
+  await citadel_factory.addPool(outside_token.address, start_time, parseEther('0.007'), parseEther('0.012'))
+  console.log("Pool address:", await citadel_factory.pools(outside_token.address));
+
 }
 
 main()
