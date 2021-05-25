@@ -198,7 +198,7 @@ describe("Liquidity pool contract", () => {
 
       //FIXME: EVM math?
       await expect(
-        await ctl_pool.connect(liquidity_provider).availableReward()
+        await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(parseEther("6.999999999999999654"));
 
       //check lp-token accrual
@@ -272,7 +272,7 @@ describe("Liquidity pool contract", () => {
       // FIXME:
       // 893*7/993 = 6,295065458207452165 (6,295065458207451854 in EVM?) ethers
       await expect(
-        await ctl_pool.connect(liquidity_provider).availableReward()
+        await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal("6295065458207451854");
     });
   });
@@ -442,7 +442,7 @@ describe("Liquidity pool contract", () => {
 
       //FIXME: EVM math
       await expect(
-        await ctl_pool.connect(liquidity_provider).availableReward()
+        await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(parseEther("6.999999999999999654"));
 
       await expect(
@@ -475,7 +475,7 @@ describe("Liquidity pool contract", () => {
 
       //FIXME: EVM math
       await expect(
-        await ctl_pool.connect(liquidity_provider).availableReward()
+        await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(parseEther("12.999999999999999783"));
 
       await expect(

@@ -13,6 +13,33 @@ import "./interfaces/IFlashLoanReceiver.sol";
 contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     using SafeMath for uint256;
 
+    /**
+     * @dev State of users stake
+     * @param totalStaked Total staked added when funds are deposited, subtracted upon withdrawal
+     * @param missedProfit Missed profit increased on deposit_amount*prevTps when funds are deposited, and decreased when funds are withdrawal
+     * @param signMissedProfit Sign of missed profit amount 0 - positive, 1 - negative
+     * @param claimedReward Total amount of claimed rewards
+     */
+    struct Stake {
+        uint256 totalStaked;
+        uint256 missedProfit;
+        uint256 claimedReward;
+        uint256 missedCtl;
+        uint256 claimedCtl;
+        bool signMissedProfit;
+        bool signMissedCtl;
+    }
+
+    /**
+     * @dev Loaned and returned funds and added profit
+     */
+    struct Loan {
+        uint256 borrowed;
+        uint256 returned;
+        uint256 profit;
+        bool lock;
+    }
+
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
     uint256 private _totalSupply;
@@ -43,24 +70,23 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     uint256 public totalProfit;
 
     /// @dev Tokens per staked amount
-    uint256 public tps;
-
     /// @dev prevTps Tokens per staked amount for previously day
+    uint256 public tps;
     uint256 public prevTps;
 
     /// @dev Balance of tokens
     uint256 public totalStaked;
 
     /// @dev Balance of tokens for current day, it reset to zero every day
-    uint256 private _dailyStacked;
     /// @dev Sign of daily staked tokens, false - positive, true - negative
+    uint256 private _dailyStacked;
     bool private _signDailyStacked;
 
-    /// @dev Borrowed and funds amount
+    /// @dev Borrowed and returned funds amount
     uint256 public borrowed;
     uint256 public returned;
 
-    /// @dev Minimal premium percent
+    /// @dev Minimal premium percent for borrowers
     uint256 public premiumCoeff;
 
     /// @dev true - enabled pool, false - disabled pool
@@ -74,8 +100,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     CTLToken public ctlToken;
     uint256 public prevMintingBlock;
     uint256 public tokensPerBlock;
-    uint256 ctps;
-    uint256 prevCtps;
+    uint256 public ctlTps;
 
     mapping(address => Stake) public userStaked;
 
@@ -106,6 +131,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         enabled = true;
         _owner = msg.sender;
         _setupRole(DEFAULT_ADMIN_ROLE, admin);
+        //FIXME: add start block
         prevMintingBlock = block.number;
     }
 
@@ -190,9 +216,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         require(enabled, "Pool: Pool disabled");
 
         Stake storage accountS = userStaked[sender];
-        uint256 percent = amount.mul(1e18).div(accountS.totalStaked);
-        uint256 claimedReward = accountS.claimedReward.mul(percent).div(1e18);
-        uint256 missedProfit = accountS.missedProfit.mul(percent).div(1e18);
+        uint256 percent = amount.mul(10**_decimals).div(accountS.totalStaked);
+        uint256 claimedReward =
+            accountS.claimedReward.mul(percent).div(10**_decimals);
+        uint256 missedProfit =
+            accountS.missedProfit.mul(percent).div(10**_decimals);
         accountS.totalStaked = accountS.totalStaked.sub(amount);
         accountS.claimedReward = accountS.claimedReward.sub(claimedReward);
         accountS.missedProfit = accountS.missedProfit.sub(missedProfit);
@@ -339,6 +367,14 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         enabled = false;
     }
 
+    /** @notice Disable pool for staking and loans
+     * The Citadel factory owns the pool
+     */
+    function updateTokensPerBlock(uint256 tokensPerBlock_) public override {
+        require(msg.sender == _owner, "Pool: FORBIDDEN");
+        tokensPerBlock = tokensPerBlock_;
+    }
+
     /**
      * @notice Daily staked liquidity
      */
@@ -349,15 +385,32 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     /**
      * @notice Get accounts available rewards
      */
-    function availableReward() public view override returns (uint256) {
-        Stake storage account = userStaked[msg.sender];
-        uint256 available_reward = account.totalStaked.mul(tps).div(1e18);
+    function availableReward(address user) public view override returns (uint256) {
+        Stake storage account = userStaked[user];
+        uint256 available_reward =
+            account.totalStaked.mul(tps).div(10**_decimals);
         if (!account.signMissedProfit) {
             available_reward = available_reward.sub(account.missedProfit);
         } else {
             available_reward = available_reward.add(account.missedProfit);
         }
         available_reward = available_reward.sub(account.claimedReward);
+        return available_reward;
+    }
+
+    /**
+     * @notice Get accounts available rewards
+     */
+    function availableCtl(address user) public view override returns (uint256) {
+        Stake storage account = userStaked[user];
+        uint256 available_reward =
+            account.totalStaked.mul(tpsCtl).div(10**ctlToken.decimals());
+        if (!account.signMissedCtl) {
+            available_reward = available_reward.sub(account.missedCtl);
+        } else {
+            available_reward = available_reward.add(account.missedCtl);
+        }
+        available_reward = available_reward.sub(account.claimedCtl);
         return available_reward;
     }
 
@@ -395,21 +448,29 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         require(amount > 0, "Pool: Amount is invalid");
 
         Stake storage account = userStaked[msg.sender];
-        uint256 premium = amount.mul(apyTax).div(1e18);
+        uint256 premium = amount.mul(apyTax).div(10**_decimals);
         uint256 staked = amount.sub(premium);
         totalStaked = totalStaked.add(staked);
         account.totalStaked = account.totalStaked.add(staked);
         _addDailyStacked(staked);
-        _addMissedProfit(msg.sender, staked.mul(prevTps).div(1e18));
+        _addMissedProfit(msg.sender, staked.mul(prevTps).div(10**_decimals));
         _addProfit(premium);
-        emit Deposited(msg.sender, token, staked);
+
         uint256 minted = ctlToken.mint();
         if (minted > 0) {
-            ctps = ctps.add(minted.mul(10**_decimals).div(totalStaked));
+            ctlTps = ctlTps.add(
+                (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
+            );
+            _addMissedCtl(msg.sender, staked.mul(ctlTps).div(ctlToken.decimals()));
+            ctlTps = ctlTps.add(
+                tokensPerBlock.mul(10**_decimals).div(totalStaked)
+            );
         }
         prevMintingBlock = block.number;
+
         token.transferFrom(msg.sender, address(this), amount);
         _mint(msg.sender, staked);
+        emit Deposited(msg.sender, token, staked);
     }
 
     /**
@@ -426,9 +487,20 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         totalStaked = totalStaked.sub(amount);
         account.totalStaked = account.totalStaked.sub(amount);
         _subDailyStacked(amount);
-        _subMissedProfit(msg.sender, amount.mul(prevTps).div(1e18));
-
+        _subMissedProfit(msg.sender, amount.mul(prevTps).div(10**_decimals));
         _burn(msg.sender, amount);
+        uint256 minted = ctlToken.mint();
+        if (minted > 0) {
+            ctlTps = ctlTps.add(
+                (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
+            );
+            _subMissedCtl(msg.sender, staked.mul(ctlTps).div(ctlToken.decimals()));
+            ctlTps = ctlTps.add(
+                tokensPerBlock.mul(10**_decimals).div(totalStaked)
+            );
+        }
+        prevMintingBlock = block.number;
+
         token.transfer(msg.sender, amount);
         emit Withdrew(msg.sender, token, amount);
     }
@@ -441,17 +513,30 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         require(enabled, "Pool: Pool disabled");
         Stake storage account = userStaked[msg.sender];
         require(
-            amount > 0 && amount <= availableReward(),
+            amount > 0 && amount <= availableReward(msg.sender),
             "Pool: Amount should be less or equal then available reward"
         );
         account.claimedReward = account.claimedReward.add(amount);
 
         token.transfer(msg.sender, amount);
-        //FIXME: calc amount of CTL tokens transferred to liquidity provider
-        // reward_amount * coinprice
-        uint256 ctlAmount = amount; //* coinprice
-        ctlToken.transfer(msg.sender, ctlAmount);
-        emit Rewarded(msg.sender, ctlAmount);
+        emit Rewarded(msg.sender, token, amount);
+    }
+
+    /**
+     * @notice Withdraw rewards from pool in CTL tokens
+     * @param amount Rewards amount
+     */
+    function claimCtl(uint256 amount) public override {
+        require(enabled, "Pool: Pool disabled");
+        Stake storage account = userStaked[msg.sender];
+        require(
+            amount > 0 && amount <= availableCtl(msg.sender),
+            "Pool: Amount should be less or equal then available reward"
+        );
+        account.claimedCtl = account.claimedCtl.add(amount);
+
+        tokenCtl.transfer(msg.sender, amount);
+        emit Rewarded(msg.sender, ctlToken, amount);
     }
 
     /**
@@ -475,7 +560,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         require(!loan.lock, "Pool: reentrancy guard");
         require(amount > 0 && amount <= totalStaked, "Pool: Amount is invalid");
         require(
-            premium.mul(1e18).div(amount) >= premiumCoeff,
+            premium.mul(10**_decimals).div(amount) >= premiumCoeff,
             "Pool: Profit amount is invalid"
         );
         loan.lock = true;
@@ -561,7 +646,8 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         _checkCurrentDayAndUpdatePool();
         receiptProfit = receiptProfit.add(premium);
         totalProfit = totalProfit.add(premium);
-        tps = prevTps.add(receiptProfit.mul(1e18).div(totalStaked));
+        //FIXME: tps = prevTps+receiptProfit/totalStaked or tps += receiptProfit/totalStaked ???
+        tps = prevTps.add(receiptProfit.mul(10**_decimals).div(totalStaked));
     }
 
     /**
@@ -601,6 +687,46 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             }
         } else {
             account.missedProfit = account.missedProfit.add(amount);
+        }
+    }
+
+    /**
+     * @notice Recalc missed profit when user deposited or transfered funds
+     * @param user Address of account
+     * @param amount Profit amount
+     */
+    function _addMissedCtl(address user, uint256 amount) internal {
+        Stake storage account = userStaked[user];
+        //missedCtl is negative
+        if (account.signMissedCtl) {
+            if (account.missedCtl > amount) {
+                account.missedCtl = account.missedCtl.sub(amount);
+            } else {
+                account.missedCtl = amount.sub(account.missedCtl);
+                account.signMissedCtl = false;
+            }
+        } else {
+            account.missedCtl = account.missedCtl.add(amount);
+        }
+    }
+
+    /**
+     * @notice Recalc missed profit when user withdrawal or transfered funds
+     * @param user Address of account
+     * @param amount Profit amount
+     */
+    function _subMissedCtl(address user, uint256 amount) internal {
+        Stake storage account = userStaked[user];
+        //missedCtl is positive
+        if (!account.signMissedCtl) {
+            if (account.missedCtl >= amount) {
+                account.missedCtl = account.missedCtl.sub(amount);
+            } else {
+                account.missedCtl = amount.sub(account.missedCtl);
+                account.signMissedCtl = true;
+            }
+        } else {
+            account.missedCtl = account.missedCtl.add(amount);
         }
     }
 

@@ -230,13 +230,16 @@ contract CTLToken is IBEP20, AccessControl {
         if (mintDisabled){
             return 0;
         }
-        uint256 mintAvailable =
+        uint256 amount =
             (block.number.sub(CitadelPool(msg.sender).prevMintingBlock())).mul(
                 CitadelPool(msg.sender).tokensPerBlock()
             );
 
-        _mint(msg.sender, mintAvailable);
-        return mintAvailable;
+        if (_totalSupply.add(amount) >= maxTotalSupply){
+            amount = maxTotalSupply.sub(_totalSupply);
+        }
+        _mint(msg.sender, amount);
+        return amount;
     }
 
     function stopMint() public {
@@ -292,7 +295,7 @@ contract CTLToken is IBEP20, AccessControl {
         require(account != address(0), "BEP20: mint to the zero address");
         _totalSupply = _totalSupply.add(amount);
         require(
-            _totalSupply <= maxTotalSupply,
+            _totalSupply < maxTotalSupply,
             "CTL: Total supply reached maximum"
         );
 
