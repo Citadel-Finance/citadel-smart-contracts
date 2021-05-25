@@ -404,7 +404,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     function availableCtl(address user) public view override returns (uint256) {
         Stake storage account = userStaked[user];
         uint256 available_reward =
-            account.totalStaked.mul(tpsCtl).div(10**ctlToken.decimals());
+            account.totalStaked.mul(ctlTps).div(10**ctlToken.decimals());
         if (!account.signMissedCtl) {
             available_reward = available_reward.sub(account.missedCtl);
         } else {
@@ -494,7 +494,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             ctlTps = ctlTps.add(
                 (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
             );
-            _subMissedCtl(msg.sender, staked.mul(ctlTps).div(ctlToken.decimals()));
+            _subMissedCtl(msg.sender, amount.mul(ctlTps).div(ctlToken.decimals()));
             ctlTps = ctlTps.add(
                 tokensPerBlock.mul(10**_decimals).div(totalStaked)
             );
@@ -535,7 +535,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         );
         account.claimedCtl = account.claimedCtl.add(amount);
 
-        tokenCtl.transfer(msg.sender, amount);
+        ctlToken.transfer(msg.sender, amount);
         emit Rewarded(msg.sender, ctlToken, amount);
     }
 

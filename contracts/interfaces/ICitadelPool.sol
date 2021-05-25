@@ -29,6 +29,8 @@ interface ICitadelPool {
 
     function claimReward(uint256 amount) external;
 
+    function claimCtl(uint256 amount) external;
+
     function flashLoan(
         address receiver,
         uint256 amount,
