@@ -5,7 +5,7 @@ import "./ILPToken.sol";
 import "../CTLToken.sol";
 
 interface ICitadelPool {
-    function dailyStacked() external view returns (bool, uint256);
+    function dailyStaked() external view returns (bool, uint256);
 
     function availableReward(address user) external view returns (uint256);
 

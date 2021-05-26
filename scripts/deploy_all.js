@@ -27,7 +27,7 @@ async function main() {
   await citadel_token.grantRole(await citadel_token.DEFAULT_ADMIN_ROLE(), citadel_factory.address);
 
   let start_time = new Date().getTime();
-  await citadel_factory.addPool(outside_token.address, start_time, parseEther('0.007'), parseEther('0.012'))
+  await citadel_factory.addPool(outside_token.address, start_time, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF))
   console.log("Pool address:", await citadel_factory.pools(outside_token.address));
 
 }

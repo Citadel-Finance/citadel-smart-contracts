@@ -10,12 +10,16 @@ const tokensPerBlock = parseEther("1000");
 let liquidity_provider;
 let lp_pool_owner;
 let borrower;
+let user1;
+let user2;
+let user3;
+let user4;
 
 ethers.getSigners().then(val => {
-  [liquidity_provider, lp_pool_owner, borrower] = val;
+  [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4,] = val;
 });
 
-describe("Liquidity pool contract", () => {
+describe("Pool unit test", () => {
   let OutsideToken;
   let CTLToken;
   let CitadelFactory;
@@ -25,8 +29,8 @@ describe("Liquidity pool contract", () => {
   let outside_token;
   let ctl_factory;
   let ctl_pool;
-  let ctl_pool_8;
   let fl_receiver;
+  let start_time;
 
   beforeEach(async () => {
     require('dotenv').config();
@@ -36,23 +40,9 @@ describe("Liquidity pool contract", () => {
     CitadelPool = await ethers.getContractFactory("CitadelPool", lp_pool_owner);
     FLReceiver = await ethers.getContractFactory("FlashLoanReceiver", borrower);
 
-    outside_token = await OutsideToken.deploy(
-      "OUTSIDE",
-      "OUT",
-      18,
-      parseEther(process.env.TOKEN_TOTAL_SUPPLY)
-    );
+    outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
     await outside_token.deployed();
     await outside_token.connect(liquidity_provider).mint(parseEther('1000000'));
-
-    outside_token_8 = await OutsideToken.deploy(
-      "OUTSIDE8",
-      "OUT8",
-      8,
-      parseEther(process.env.TOKEN_TOTAL_SUPPLY)
-    );
-    await outside_token_8.deployed();
-    await outside_token_8.connect(liquidity_provider).mint(parseEther('1000000'));
 
     ctl_token = await CTLToken.deploy(
       process.env.TOKEN_NAME,
@@ -60,25 +50,23 @@ describe("Liquidity pool contract", () => {
       process.env.TOKEN_DECIMALS,
       parseEther(process.env.TOKEN_TOTAL_SUPPLY)
     );
-    let start_time = new Date().getTime();
+    let bl_num = await hre.ethers.provider.send("eth_blockNumber");
+    let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
+    start_time = block.timestamp-100;
 
     ctl_factory = await CitadelFactory.deploy(ctl_token.address);
     await ctl_factory.deployed();
 
     await ctl_token.grantRole(await ctl_token.DEFAULT_ADMIN_ROLE(), ctl_factory.address);
 
-    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
+    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
     let lp_pool_addr = await ctl_factory.pools(outside_token.address);
     ctl_pool = await CitadelPool.attach(lp_pool_addr);
-
-    await ctl_factory.addPool(outside_token_8.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
-    let lp_pool_8_addr = await ctl_factory.pools(outside_token_8.address);
-    ctl_pool_8 = await CitadelPool.attach(lp_pool_8_addr);
 
     fl_receiver = await FLReceiver.deploy(ctl_pool.address);
     await fl_receiver.deployed();
   });
-
+/*
   describe("Deployment", () => {
     it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
       let default_admin_role = await ctl_pool.DEFAULT_ADMIN_ROLE();
@@ -100,7 +88,6 @@ describe("Liquidity pool contract", () => {
   describe("Settings", () => {
 
     it("Tokens whitelist may be set only admin: fail", async () => {
-      let start_time = new Date().getTime();
       try {
         await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
       }
@@ -172,7 +159,7 @@ describe("Liquidity pool contract", () => {
       //Approve for transfer outside token to LP-pool
       await outside_token.connect(liquidity_provider).approve(ctl_pool.address, parseEther('1000'));
 
-      //Outside token transfered to LP-pool address and add stacked
+      //Outside token transfered to LP-pool address and add Staked
       await ctl_pool.connect(liquidity_provider).deposit(parseEther('1000'));
 
       //Check staked
@@ -184,7 +171,7 @@ describe("Liquidity pool contract", () => {
         await ctl_pool.connect(liquidity_provider).totalStaked()
       ).to.be.equal(parseEther('993'));
 
-      [sign, value] = await ctl_pool.dailyStacked();
+      [sign, value] = await ctl_pool.dailyStaked();
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('993'));
 
@@ -233,7 +220,7 @@ describe("Liquidity pool contract", () => {
       await outside_token.connect(liquidity_provider).approve(ctl_pool.address, parseEther('1000'));
       await ctl_pool.connect(liquidity_provider).deposit(parseEther('1000'));
 
-      //993 - stacked
+      //993 - Staked
       try {
         await ctl_pool.connect(liquidity_provider).withdraw(parseEther('994'));
       }
@@ -257,7 +244,7 @@ describe("Liquidity pool contract", () => {
         (await ctl_pool.userStaked(liquidity_provider.address)).totalStaked
       ).to.be.equal(parseEther('893'));
 
-      [sign, value] = await ctl_pool.dailyStacked();
+      [sign, value] = await ctl_pool.dailyStaked();
       await expect(sign).to.be.equal(false);
       await expect(value).to.be.equal(parseEther('893'));
 
@@ -328,7 +315,7 @@ describe("Liquidity pool contract", () => {
       }
     });
 
-    it("Borrow invalid amount (> stacked): fail", async () => {
+    it("Borrow invalid amount (> Staked): fail", async () => {
       //deposit token to  pool
       //993 - staked
       await outside_token.connect(liquidity_provider).approve(ctl_pool.address, parseEther('1000'));
@@ -486,4 +473,5 @@ describe("Liquidity pool contract", () => {
       ).to.be.equal(0);
     })
   });
+  */
 });
