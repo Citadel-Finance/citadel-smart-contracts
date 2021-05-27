@@ -6,6 +6,7 @@ const { parseEther } = require("ethers/utils");
 async function main() {
   require('dotenv').config();
   const OutsideToken = await hre.ethers.getContractFactory("OutsideToken");
+  //const outside_token = await OutsideToken.attach("0x3281b72e55D1Dbe9D63395deDeAe0bbE8B4dC6d9");
   const outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
   await outside_token.deployed();
   console.log("OUT token address:", outside_token.address);
@@ -27,6 +28,7 @@ async function main() {
 
   await citadel_token.grantRole(await citadel_token.DEFAULT_ADMIN_ROLE(), citadel_factory.address);
 
+  //start_time = process.env.POOL_START_TIME
   let bl_num = await hre.ethers.provider.send("eth_blockNumber");
   let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
   let start_time = block.timestamp-100;

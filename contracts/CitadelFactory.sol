@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.7.0;
+pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -12,8 +13,14 @@ import "./CTLToken.sol";
 contract CitadelFactory is AccessControl {
     using Address for address;
 
+    struct PoolInfo {
+        CitadelPool pool;
+        IBEP20 token;
+    }
+
     CTLToken public ctlToken;
     mapping(IBEP20 => CitadelPool) public pools;
+    PoolInfo[] _poolList;
 
     constructor(CTLToken ctlToken_) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -57,6 +64,7 @@ contract CitadelFactory is AccessControl {
                 msg.sender
             );
         pools[token] = pool;
+        _poolList.push(PoolInfo({pool: pool, token: token}));
         ctlToken.grantRole(ctlToken.MINTER_ROLE(), address(pool));
         emit Created(token, pool);
     }
@@ -83,6 +91,13 @@ contract CitadelFactory is AccessControl {
      */
     function isPoolEnabled(IBEP20 token) public view returns (bool) {
         return pools[token].enabled();
+    }
+
+    /**
+     * @notice Return all pools info
+     */
+    function allPools() public view returns (PoolInfo[] memory) {
+        return _poolList;
     }
 
     event Created(IBEP20 token, CitadelPool pool);
