@@ -479,10 +479,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             ctlTps = ctlTps.add(
                 (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
             );
-            _addMissedCtl(
-                msg.sender,
-                staked.mul(ctlTps).div(ctlToken.decimals())
-            );
+            _addMissedCtl(msg.sender, staked.mul(ctlTps).div(10**_decimals));
             ctlTps = ctlTps.add(
                 tokensPerBlock.mul(10**_decimals).div(totalStaked)
             );
@@ -516,10 +513,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             ctlTps = ctlTps.add(
                 (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
             );
-            _subMissedCtl(
-                msg.sender,
-                amount.mul(ctlTps).div(ctlToken.decimals())
-            );
+            _subMissedCtl(msg.sender, amount.mul(ctlTps).div(10**_decimals));
             ctlTps = ctlTps.add(
                 tokensPerBlock.mul(10**_decimals).div(totalStaked)
             );
