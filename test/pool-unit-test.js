@@ -16,7 +16,7 @@ let user3;
 let user4;
 
 ethers.getSigners().then(val => {
-  [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4,] = val;
+  [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4] = val;
 });
 
 describe("Pool unit test", () => {
@@ -66,7 +66,7 @@ describe("Pool unit test", () => {
     fl_receiver = await FLReceiver.deploy(ctl_pool.address);
     await fl_receiver.deployed();
   });
-/*
+
   describe("Deployment", () => {
     it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
       let default_admin_role = await ctl_pool.DEFAULT_ADMIN_ROLE();
@@ -473,5 +473,4 @@ describe("Pool unit test", () => {
       ).to.be.equal(0);
     })
   });
-  */
 });
