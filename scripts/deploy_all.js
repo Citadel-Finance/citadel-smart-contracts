@@ -8,6 +8,7 @@ async function main() {
   const OutsideToken = await hre.ethers.getContractFactory("OutsideToken");
   const outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
   await outside_token.deployed();
+  console.log("OUT token address:", outside_token.address);
 
   const CitadelToken = await hre.ethers.getContractFactory("CTLToken");
   const citadel_token = await CitadelToken.deploy(
@@ -26,8 +27,10 @@ async function main() {
 
   await citadel_token.grantRole(await citadel_token.DEFAULT_ADMIN_ROLE(), citadel_factory.address);
 
-  let start_time = new Date().getTime();
-  await citadel_factory.addPool(outside_token.address, start_time, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF))
+  let bl_num = await hre.ethers.provider.send("eth_blockNumber");
+  let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
+  let start_time = block.timestamp-100;
+  await citadel_factory.addPool(outside_token.address, start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF))
   console.log("Pool address:", await citadel_factory.pools(outside_token.address));
 
 }
