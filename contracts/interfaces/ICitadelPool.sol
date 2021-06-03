@@ -21,8 +21,6 @@ interface ICitadelPool {
 
     function updatePremiumCoeff(uint256 premiumCoeff_) external;
 
-    function updateCTLToken(CTLToken token) external;
-
     function deposit(uint256 amount) external;
 
     function withdraw(uint256 amount) external;
@@ -40,6 +38,7 @@ interface ICitadelPool {
 
     /// @dev Event emitted when the depositor sends funds
     event Deposited(
+        uint256 date,
         address indexed depositor,
         IBEP20 indexed token,
         uint256 amount
@@ -47,16 +46,18 @@ interface ICitadelPool {
 
     /// @dev Event emitted when the depositor received funds
     event Withdrew(
+        uint256 date,
         address indexed receiver,
         IBEP20 indexed token,
         uint256 amount
     );
 
     /// @dev Event emitted when the depositor claimed rewards
-    event Rewarded(address indexed borrower, IBEP20 indexed token, uint256 amount);
+    event Rewarded(uint256 date, address indexed borrower, IBEP20 indexed token, uint256 amount);
 
     /// @dev Event emitted when the borrower has borrowed and repaid funds
     event FlashLoan(
+        uint256 date,
         address indexed user,
         address indexed receiver,
         uint256 amount,

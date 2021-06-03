@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.7.0;
+pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -40,15 +41,50 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         bool lock;
     }
 
-    mapping(address => uint256) private _balances;
-    mapping(address => mapping(address => uint256)) private _allowances;
+    struct CommonData {
+        uint256 decimals;
+        uint256 totalStaked;
+        uint256 dailyStaked;
+        uint256 totalProfit;
+        uint256 receiptProfit;
+        uint256 tokensPerBlock;
+        uint256 apyTax;
+        uint256 premiumCoeff;
+        IBEP20 token;
+        CTLToken ctlToken;
+        bool enabled;
+        bool signDailyStaked;
+        string symbol;
+        string name;
+    }
+
+    struct UserData {
+        uint256 totalStaked;
+        uint256 balanceOf;
+        uint256 claimedReward;
+        uint256 claimedCtl;
+        uint256 availableReward;
+        uint256 availableCtl;
+    }
+
+    struct Top {
+        address user;
+        uint256 staked;
+    }
+
     uint256 private _totalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
     address private _owner;
 
-    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER");
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    Top[10] topProviders;
+    Top[10] topKeepers;
+
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
 
     /**
      * @dev State of liquidity pool
@@ -61,7 +97,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     uint256 public startTime;
 
     /// @dev APY tax percent
-    uint256 public apyTax;
+    uint256 public apyTax; /////
 
     /// @dev Profit for current day, is reset to zero every day
     uint256 public receiptProfit;
@@ -93,11 +129,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     bool public enabled;
 
     /// @dev Outside token address
-    IBEP20 public token;
+    IBEP20 public immutable token;
 
     /// @dev CTL-token settings
     /// @dev CTL-tokens per staked
-    CTLToken public ctlToken;
+    CTLToken public immutable ctlToken;
     uint256 public tokensPerBlock;
     uint256 public prevMintingBlock;
     uint256 public ctlTps;
@@ -131,7 +167,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         enabled = true;
         _owner = msg.sender;
         _setupRole(DEFAULT_ADMIN_ROLE, admin);
-        //FIXME: add start block
+        _setupRole(ADMIN_ROLE, admin);
+        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+        _setRoleAdmin(BORROWER_ROLE, ADMIN_ROLE);
         prevMintingBlock = block.number;
     }
 
@@ -296,7 +334,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         _transfer(sender, recipient, amount);
         _approve(
             sender,
-            recipient,
+            msg.sender,
             _allowances[sender][msg.sender].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
@@ -363,8 +401,61 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         return true;
     }
 
+    /**
+     * @notice Get pools common info
+     */
+    function getCommonData() public view returns (CommonData memory) {
+        return
+            CommonData({
+                decimals: token.decimals(),
+                totalStaked: totalStaked,
+                signDailyStaked: _signDailyStaked,
+                dailyStaked: _dailyStaked,
+                totalProfit: totalProfit,
+                receiptProfit: receiptProfit,
+                tokensPerBlock: tokensPerBlock,
+                token: token,
+                ctlToken: ctlToken,
+                symbol: token.symbol(),
+                name: token.name(),
+                enabled: enabled,
+                apyTax: apyTax,
+                premiumCoeff: premiumCoeff
+            });
+    }
+
+    /**
+     * @notice Get pools user info
+     */
+    function getUserData(address user) public view returns (UserData memory) {
+        Stake memory st = userStaked[user];
+        return
+            UserData({
+                totalStaked: st.totalStaked,
+                balanceOf: _balances[user],
+                claimedReward: st.claimedReward,
+                claimedCtl: st.claimedCtl,
+                availableReward: availableReward(user),
+                availableCtl: availableCtl(user)
+            });
+    }
+
+    /**
+     * @notice get top 5 liquidity providers
+     */
+    function getTopProviders() public view returns (Top[10] memory) {
+        return topProviders;
+    }
+
+    /**
+     * @notice get top 5 liquidity providers
+     */
+    function getTopKeepers() public view returns (Top[10] memory) {
+        return topKeepers;
+    }
+
     /** @notice Enable pool for staking and loans
-     * The factory owns the pool
+     * The Citadel factory called this function as owner of the pool
      */
     function enable() public override {
         require(msg.sender == _owner, "Pool: FORBIDDEN");
@@ -372,19 +463,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     }
 
     /** @notice Disable pool for staking and loans
-     * The Citadel factory owns the pool
+     * The Citadel factory called this function as owner of the pool
      */
     function disable() public override {
         require(msg.sender == _owner, "Pool: FORBIDDEN");
         enabled = false;
-    }
-
-    /** @notice Disable pool for staking and loans
-     * The Citadel factory owns the pool
-     */
-    function updateTokensPerBlock(uint256 tokensPerBlock_) public override {
-        require(msg.sender == _owner, "Pool: FORBIDDEN");
-        tokensPerBlock = tokensPerBlock_;
     }
 
     /**
@@ -432,27 +515,20 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     }
 
     function updateApyTax(uint256 apyTax_) public override {
-        require(
-            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
-            "Pool: Caller is not a admin"
-        );
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
         apyTax = apyTax_;
     }
 
     function updatePremiumCoeff(uint256 premiumCoeff_) public override {
-        require(
-            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
-            "Pool: Caller is not a admin"
-        );
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
         premiumCoeff = premiumCoeff_;
     }
 
-    function updateCTLToken(CTLToken ctlToken_) public override {
-        require(
-            hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
-            "Pool: Caller is not a admin"
-        );
-        ctlToken = ctlToken_;
+    /** @notice set CTL-tokens amount minting per block
+     */
+    function updateTokensPerBlock(uint256 tokensPerBlock_) public override {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
+        tokensPerBlock = tokensPerBlock_;
     }
 
     /**
@@ -485,10 +561,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             );
         }
         prevMintingBlock = block.number;
+        _insertTop(topProviders, account.totalStaked);
 
         token.transferFrom(msg.sender, address(this), amount);
         _mint(msg.sender, staked);
-        emit Deposited(msg.sender, token, staked);
+        emit Deposited(block.timestamp, msg.sender, token, staked);
     }
 
     /**
@@ -521,7 +598,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         prevMintingBlock = block.number;
 
         token.transfer(msg.sender, amount);
-        emit Withdrew(msg.sender, token, amount);
+        emit Withdrew(block.timestamp, msg.sender, token, amount);
     }
 
     /**
@@ -537,7 +614,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         account.claimedReward = account.claimedReward.add(amount);
 
         token.transfer(msg.sender, amount);
-        emit Rewarded(msg.sender, token, amount);
+        emit Rewarded(block.timestamp, msg.sender, token, amount);
     }
 
     /**
@@ -553,7 +630,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         account.claimedCtl = account.claimedCtl.add(amount);
 
         ctlToken.transfer(msg.sender, amount);
-        emit Rewarded(msg.sender, ctlToken, amount);
+        emit Rewarded(block.timestamp, msg.sender, ctlToken, amount);
     }
 
     /**
@@ -599,7 +676,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         loan.returned = loan.returned.add(amount);
         loan.profit = loan.profit.add(premium);
         loan.lock = false;
-        emit FlashLoan(msg.sender, receiver, amount, premium);
+        emit FlashLoan(block.timestamp, msg.sender, receiver, amount, premium);
     }
 
     /**
@@ -837,21 +914,22 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         emit Approval(owner, spender, amount);
     }
 
-    /**
-     * @dev Destroys `amount` tokens from `account`.`amount` is then deducted
-     * from the caller's allowance.
-     *
-     * See {_burn} and {_approve}.
-     */
-    function _burnFrom(address account, uint256 amount) internal virtual {
-        _burn(account, amount);
-        _approve(
-            account,
-            msg.sender,
-            _allowances[account][msg.sender].sub(
-                amount,
-                "BEP20: burn amount exceeds allowance"
-            )
-        );
+    function _insertTop(Top[10] storage array, uint256 amount) internal {
+        for (uint256 i = array.length - 1; i >= 0; i--) {
+            // for last iteration
+            if (i == 0) {
+                array[i] = Top({user: msg.sender, staked: amount});
+                break;
+            }
+            if(msg.sender==array[i-1].user){
+                continue;
+            }
+            if (amount > array[i - 1].staked) {
+                array[i] = array[i - 1];
+            } else {
+                array[i] = Top({user: msg.sender, staked: amount});
+                break;
+            }
+        }
     }
 }

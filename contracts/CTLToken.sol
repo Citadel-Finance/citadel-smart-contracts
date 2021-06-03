@@ -9,7 +9,8 @@ import "./CitadelPool.sol";
 
 contract CTLToken is IBEP20, AccessControl {
     using SafeMath for uint256;
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER");
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -29,7 +30,9 @@ contract CTLToken is IBEP20, AccessControl {
         uint256 maxTotalSupply_
     ) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-
+        _setupRole(ADMIN_ROLE, msg.sender);
+        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+        _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
@@ -227,7 +230,7 @@ contract CTLToken is IBEP20, AccessControl {
      */
     function mint() public virtual returns (uint256) {
         require(hasRole(MINTER_ROLE, msg.sender), "CTL: FORBIDDEN");
-        if (mintDisabled){
+        if (mintDisabled) {
             return 0;
         }
         uint256 amount =
@@ -235,7 +238,7 @@ contract CTLToken is IBEP20, AccessControl {
                 CitadelPool(msg.sender).tokensPerBlock()
             );
 
-        if (_totalSupply.add(amount) >= maxTotalSupply){
+        if (_totalSupply.add(amount) >= maxTotalSupply) {
             amount = maxTotalSupply.sub(_totalSupply);
         }
         _mint(msg.sender, amount);
@@ -243,12 +246,12 @@ contract CTLToken is IBEP20, AccessControl {
     }
 
     function stopMint() public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
+        require(hasRole(ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
         mintDisabled = true;
     }
 
     function startMint() public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
+        require(hasRole(ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
         mintDisabled = false;
     }
 

@@ -3,10 +3,9 @@ const web3 = new Web3("");
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 require("@nomiclabs/hardhat-waffle");
-const { parseEther } = require("ethers/utils");
+const { parseEther, parseUnits } = require("ethers/utils");
 
 const nullstr = "0x0000000000000000000000000000000000000000"
-const tokensPerBlock = parseEther("1000");
 let liquidity_provider;
 let lp_pool_owner;
 let borrower;
@@ -27,6 +26,7 @@ describe("Pool integration tests", () => {
     let FLReceiver;
     let ctl_token;
     let outside_token;
+    let outside_token_8;
     let ctl_factory;
     let ctl_pool;
     let ctl_pool_8;
@@ -45,16 +45,11 @@ describe("Pool integration tests", () => {
         await outside_token.deployed();
         await outside_token.connect(liquidity_provider).mint(parseEther('1000000'));
 
-        outside_token_8 = await OutsideToken.deploy("OUTSIDE8", "OUT8", 8, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
+        outside_token_8 = await OutsideToken.deploy("OUTSIDE8", "OUT8", 8, parseUnits(process.env.TOKEN_TOTAL_SUPPLY, 8));
         await outside_token_8.deployed();
-        await outside_token_8.connect(liquidity_provider).mint('100000000000000');
+        await outside_token_8.connect(liquidity_provider).mint(parseUnits('1000000', 8));
 
-        ctl_token = await CTLToken.deploy(
-            process.env.TOKEN_NAME,
-            process.env.TOKEN_SYMBOL,
-            process.env.TOKEN_DECIMALS,
-            parseEther(process.env.TOKEN_TOTAL_SUPPLY)
-        );
+        ctl_token = await CTLToken.deploy(process.env.TOKEN_NAME, process.env.TOKEN_SYMBOL, process.env.TOKEN_DECIMALS, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
         let bl_num = await hre.ethers.provider.send("eth_blockNumber");
         let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
         start_time = block.timestamp;
@@ -62,13 +57,13 @@ describe("Pool integration tests", () => {
         ctl_factory = await CitadelFactory.deploy(ctl_token.address);
         await ctl_factory.deployed();
 
-        await ctl_token.grantRole(await ctl_token.DEFAULT_ADMIN_ROLE(), ctl_factory.address);
+        await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
-        await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
+        await ctl_factory.addPool(outside_token.address, start_time, parseEther("1000"), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
         let lp_pool_addr = await ctl_factory.pools(outside_token.address);
         ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
-        await ctl_factory.addPool(outside_token_8.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
+        await ctl_factory.addPool(outside_token_8.address, start_time, parseEther("1000"), parseUnits(process.env.POOL_APY_TAX, 8), parseUnits(process.env.POOL_PREMIUM_COEF, 8));
         let lp_pool_8_addr = await ctl_factory.pools(outside_token_8.address);
         ctl_pool_8 = await CitadelPool.attach(lp_pool_8_addr);
 
@@ -107,6 +102,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("7"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("1.51057401812689"))
 
             //user1 check
             await expect(
@@ -496,7 +494,420 @@ describe("Pool integration tests", () => {
 
 
         it("8 decimals", async () => {
+            await outside_token_8.connect(liquidity_provider).transfer(user1.address, parseUnits('10000', 8));
+            await outside_token_8.connect(liquidity_provider).transfer(user2.address, parseUnits('10000', 8));
+            await outside_token_8.connect(liquidity_provider).transfer(user3.address, parseUnits('10000', 8));
+            await outside_token_8.connect(liquidity_provider).transfer(user4.address, parseUnits('10000', 8));
 
+            // 0 day
+            //user1 deposited
+            await outside_token_8.connect(user1).approve(ctl_pool_8.address, parseUnits('1000', 8));
+            await ctl_pool_8.connect(user1).deposit(parseUnits('1000', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(0);
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.00704934", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('993', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("993", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("7", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("7", 8));
+
+            //user1 check
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).totalStaked
+            ).to.be.equal(parseUnits('993', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user1.address)
+            ).to.be.equal(parseUnits('993', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).missedProfit
+            ).to.be.equal(0);
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user1.address)
+            ).to.be.equal(parseUnits("6.99999462", 8));
+
+            //user2 deposited
+            await outside_token_8.connect(user2).approve(ctl_pool_8.address, parseUnits('1000', 8));
+            await ctl_pool_8.connect(user2).deposit(parseUnits('1000', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.00704934", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('1986', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("1986", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("14", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("14", 8));
+
+
+            //user2 check
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).totalStaked
+            ).to.be.equal(parseUnits('993', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user2.address)
+            ).to.be.equal(parseUnits('993', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).missedProfit
+            ).to.be.equal(0);
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user2.address)
+            ).to.be.equal(parseUnits("6.99999462", 8));
+
+            /// 1 day
+            await hre.ethers.provider.send("evm_increaseTime", [86500]);
+            await hre.ethers.provider.send("evm_mine");
+            //user3 deposited
+            await outside_token_8.connect(user3).approve(ctl_pool_8.address, parseUnits('2000', 8));
+            await ctl_pool_8.connect(user3).deposit(parseUnits('2000', 8));
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(1);
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01057401", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('1986', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("3972", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("14", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("28", 8));
+
+            //user3 check
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).totalStaked
+            ).to.be.equal(parseUnits('1986', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user3.address)
+            ).to.be.equal(parseUnits('1986', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).missedProfit
+            ).to.be.equal(parseUnits("13.99998924", 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user3.address)
+            ).to.be.equal(parseUnits("6.99999462", 8));
+
+
+            /// 3 day
+            await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
+            //user2 deposited
+            await outside_token_8.connect(user2).approve(ctl_pool_8.address, parseUnits('3000', 8));
+            await ctl_pool_8.connect(user2).deposit(parseUnits('3000', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(3);
+            await expect(
+                await ctl_pool_8.prevTps()
+            ).to.be.equal(parseUnits("0.01057401", 8));
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01359515", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('2979', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("6951", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("21", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("49", 8));
+
+            //user2 check
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).totalStaked
+            ).to.be.equal(parseUnits('3972', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user2.address)
+            ).to.be.equal(parseUnits('3972', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).missedProfit
+            ).to.be.equal(parseUnits('31.49997579', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user2.address)
+            ).to.be.equal(parseUnits("22.49996001", 8));
+
+            /// 5 day
+            await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
+            //user2 withdrew
+            await ctl_pool_8.connect(user2).withdraw(parseUnits('1000', 8));
+            await ctl_pool_8.connect(user2).claimReward(parseUnits('20', 8));
+            //common
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01359515", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+
+            await expect(value).to.be.equal(parseUnits('1000', 8));
+            await expect(sign).to.be.equal(true);
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("5951", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(0);
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("49", 8));
+
+
+            //user2 check
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).totalStaked
+            ).to.be.equal(parseUnits('2972', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user2.address)
+            ).to.be.equal(parseUnits('2972', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).missedProfit
+            ).to.be.equal(parseUnits("17.90482579", 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user2.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user2.address)
+            ).to.be.equal(parseUnits("2.49996001", 8));
+
+            /// 7 day
+            await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
+            //user2 deposited
+            await outside_token_8.connect(user1).approve(ctl_pool_8.address, parseUnits('2000', 8));
+            await ctl_pool_8.connect(user1).deposit(parseUnits('2000', 8));
+            await ctl_pool_8.connect(user1).claimReward(parseUnits('10', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(7);
+            await expect(
+                await ctl_pool_8.prevTps()
+            ).to.be.equal(parseUnits("0.01359515", 8));
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01535904", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('1986', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("7937", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("14", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("63", 8));
+
+            //user1 check
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).totalStaked
+            ).to.be.equal(parseUnits('2979', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user1.address)
+            ).to.be.equal(parseUnits('2979', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).missedProfit
+            ).to.be.equal(parseUnits('26.9999679', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user1.address)
+            ).to.be.equal(parseUnits("8.75461226", 8));
+
+            /// 10 day
+            await hre.ethers.provider.send("evm_increaseTime", [3 * 86400]);
+            await ctl_pool_8.connect(user1).withdraw(parseUnits('2000', 8));
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(10);
+            await expect(
+                await ctl_pool_8.prevTps()
+            ).to.be.equal(parseUnits("0.01535904", 8));
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01535904", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(true);
+            await expect(value).to.be.equal(parseUnits('2000', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("5937", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(0);
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("63", 8));
+
+            //user1 check
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).totalStaked
+            ).to.be.equal(parseUnits('979', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user1.address)
+            ).to.be.equal(parseUnits('979', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).missedProfit
+            ).to.be.equal(parseUnits('3.7181121', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user1.address)).signMissedProfit
+            ).to.be.equal(true);
+            await expect(
+                await ctl_pool_8.availableReward(user1.address)
+            ).to.be.equal(parseUnits("8.75461226", 8));
+
+            /// 11 day
+            await hre.ethers.provider.send("evm_increaseTime", [86400]);
+            //user2 deposited
+            await outside_token_8.connect(user4).approve(ctl_pool_8.address, parseUnits('600', 8));
+            await ctl_pool_8.connect(user4).deposit(parseUnits('600', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(11);
+            await expect(
+                await ctl_pool_8.prevTps()
+            ).to.be.equal(parseUnits("0.01535904", 8));
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01600194", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(parseUnits('595.8', 8));
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("6532.8", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(parseUnits("4.2", 8));
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("67.2", 8));
+
+            //user1 check
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).totalStaked
+            ).to.be.equal(parseUnits('595.8', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user4.address)
+            ).to.be.equal(parseUnits('595.8', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).missedProfit
+            ).to.be.equal(parseUnits('9.15091603', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user4.address)
+            ).to.be.equal(parseUnits("0.38303982", 8));
+
+
+            //transfer LP tokens
+            await hre.ethers.provider.send("evm_increaseTime", [86400]);
+            await ctl_pool_8.connect(user3).transfer(user4.address, parseUnits('615.66', 8));
+
+            //common
+            await expect(
+                await ctl_pool_8.curDay()
+            ).to.be.equal(12);
+            await expect(
+                await ctl_pool_8.prevTps()
+            ).to.be.equal(parseUnits("0.01600194", 8));
+            await expect(
+                await ctl_pool_8.tps()
+            ).to.be.equal(parseUnits("0.01600194", 8));
+            [sign, value] = await ctl_pool_8.dailyStaked();
+            await expect(sign).to.be.equal(false);
+            await expect(value).to.be.equal(0);
+            await expect(
+                await ctl_pool_8.totalStaked()
+            ).to.be.equal(parseUnits("6532.8", 8));
+            await expect(
+                await ctl_pool_8.receiptProfit()
+            ).to.be.equal(0);
+            await expect(
+                await ctl_pool_8.totalProfit()
+            ).to.be.equal(parseUnits("67.2", 8));
+
+            //user3 check
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).totalStaked
+            ).to.be.equal(parseUnits('1370.34', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user3.address)
+            ).to.be.equal(parseUnits('1370.34', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).missedProfit
+            ).to.be.equal(parseUnits('9.65999258', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user3.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user3.address)
+            ).to.be.equal(parseUnits("12.26810587", 8));
+
+            //user4 check
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).totalStaked
+            ).to.be.equal(parseUnits('1211.46', 8));
+            await expect(
+                await ctl_pool_8.balanceOf(user4.address)
+            ).to.be.equal(parseUnits('1211.46', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).missedProfit
+            ).to.be.equal(parseUnits('13.49091269', 8));
+            await expect(
+                (await ctl_pool_8.userStaked(user4.address)).signMissedProfit
+            ).to.be.equal(false);
+            await expect(
+                await ctl_pool_8.availableReward(user4.address)
+            ).to.be.equal(parseUnits("5.89479754", 8));
         });
     });
 

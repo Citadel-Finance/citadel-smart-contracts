@@ -57,7 +57,7 @@ describe("Pool unit test", () => {
     ctl_factory = await CitadelFactory.deploy(ctl_token.address);
     await ctl_factory.deployed();
 
-    await ctl_token.grantRole(await ctl_token.DEFAULT_ADMIN_ROLE(), ctl_factory.address);
+    await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
     await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
     let lp_pool_addr = await ctl_factory.pools(outside_token.address);
@@ -68,10 +68,9 @@ describe("Pool unit test", () => {
   });
 
   describe("Deployment", () => {
-    it("Should set the DEFAULT_ADMIN_ROLE to creator", async () => {
-      let default_admin_role = await ctl_pool.DEFAULT_ADMIN_ROLE();
+    it("Should set the ADMIN_ROLE to creator", async () => {
       expect(
-        await ctl_pool.hasRole(default_admin_role, lp_pool_owner.address)
+        await ctl_pool.hasRole(await ctl_pool.ADMIN_ROLE(), lp_pool_owner.address)
       ).to.equal(true);
       expect(
         await ctl_pool.apyTax()
