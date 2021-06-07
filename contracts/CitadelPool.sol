@@ -47,6 +47,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 dailyStaked;
         uint256 totalProfit;
         uint256 receiptProfit;
+        uint256 totalBorrowed;
         uint256 tokensPerBlock;
         uint256 apyTax;
         uint256 premiumCoeff;
@@ -65,6 +66,8 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 claimedCtl;
         uint256 availableReward;
         uint256 availableCtl;
+        uint256 totalBorrowed;
+        bool is_admin;
     }
 
     struct Top {
@@ -143,20 +146,18 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     mapping(address => Loan) public userLoaned;
 
     constructor(
-        string memory name_,
-        string memory symbol_,
-        uint256 decimals_,
         IBEP20 token_,
         CTLToken ctlToken_,
         uint256 startTime_,
         uint256 apyTax_,
         uint256 premiumCoeff_,
         uint256 tokensPerBlock_,
-        address admin
+        address admin_,
+        bool enabled_
     ) {
-        _name = name_;
-        _symbol = symbol_;
-        _decimals = decimals_;
+        _name = string(abi.encodePacked("ct", token_.name()));
+        _symbol = string(abi.encodePacked("ct", token_.symbol()));
+        _decimals = token_.decimals();
         _totalSupply = 0;
         token = token_;
         ctlToken = ctlToken_;
@@ -164,10 +165,10 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         apyTax = apyTax_;
         premiumCoeff = premiumCoeff_;
         tokensPerBlock = tokensPerBlock_;
-        enabled = true;
+        enabled = enabled_;
         _owner = msg.sender;
-        _setupRole(DEFAULT_ADMIN_ROLE, admin);
-        _setupRole(ADMIN_ROLE, admin);
+        _setupRole(DEFAULT_ADMIN_ROLE, admin_);
+        _setupRole(ADMIN_ROLE, admin_);
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(BORROWER_ROLE, ADMIN_ROLE);
         prevMintingBlock = block.number;
@@ -413,6 +414,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
                 dailyStaked: _dailyStaked,
                 totalProfit: totalProfit,
                 receiptProfit: receiptProfit,
+                totalBorrowed: borrowed,
                 tokensPerBlock: tokensPerBlock,
                 token: token,
                 ctlToken: ctlToken,
@@ -436,7 +438,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
                 claimedReward: st.claimedReward,
                 claimedCtl: st.claimedCtl,
                 availableReward: availableReward(user),
-                availableCtl: availableCtl(user)
+                availableCtl: availableCtl(user),
+                totalBorrowed: userLoaned[user].borrowed,
+                is_admin: hasRole(ADMIN_ROLE, user)
             });
     }
 
@@ -514,21 +518,23 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         return available_reward;
     }
 
-    function updateApyTax(uint256 apyTax_) public override {
+    function updatePool(
+        uint256 apyTax_,
+        uint256 premiumCoeff_,
+        uint256 tokensPerBlock_,
+        bool enabled_
+    ) public override {
         require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
-        apyTax = apyTax_;
-    }
-
-    function updatePremiumCoeff(uint256 premiumCoeff_) public override {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
-        premiumCoeff = premiumCoeff_;
-    }
-
-    /** @notice set CTL-tokens amount minting per block
-     */
-    function updateTokensPerBlock(uint256 tokensPerBlock_) public override {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
-        tokensPerBlock = tokensPerBlock_;
+        if (apyTax_ != 0) {
+            apyTax = apyTax_;
+        }
+        if (premiumCoeff_ != 0) {
+            premiumCoeff = premiumCoeff_;
+        }
+        if (tokensPerBlock_ != 0) {
+            tokensPerBlock = tokensPerBlock_;
+        }
+        enabled = enabled_;
     }
 
     /**
@@ -561,7 +567,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             );
         }
         prevMintingBlock = block.number;
-        _insertTop(topProviders, account.totalStaked);
+        _updateTop(topProviders, account.totalStaked);
 
         token.transferFrom(msg.sender, address(this), amount);
         _mint(msg.sender, staked);
@@ -596,6 +602,8 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             );
         }
         prevMintingBlock = block.number;
+
+        _updateTop(topProviders, account.totalStaked);
 
         token.transfer(msg.sender, amount);
         emit Withdrew(block.timestamp, msg.sender, token, amount);
@@ -914,22 +922,22 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         emit Approval(owner, spender, amount);
     }
 
-    function _insertTop(Top[10] storage array, uint256 amount) internal {
-        for (uint256 i = array.length - 1; i >= 0; i--) {
-            // for last iteration
-            if (i == 0) {
-                array[i] = Top({user: msg.sender, staked: amount});
+    function _updateTop(Top[10] storage array, uint256 amount) internal {
+        uint256 _index;
+        for (uint256 i = 0; i < array.length; i++) {
+            if (array[i].user == msg.sender){
+                _index = i;
                 break;
             }
-            if(msg.sender==array[i-1].user){
-                continue;
+            if (array[i].staked < array[_index].staked) {
+                _index = i;
             }
-            if (amount > array[i - 1].staked) {
-                array[i] = array[i - 1];
-            } else {
-                array[i] = Top({user: msg.sender, staked: amount});
-                break;
-            }
+        }
+        if(amount > array[_index].staked || msg.sender == array[_index].user){
+            array[_index] = Top({user: msg.sender, staked: amount});
+        }
+        if(amount == 0){
+            array[_index] = Top({user: address(0), staked: 0});
         }
     }
 }

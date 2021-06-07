@@ -34,8 +34,10 @@ async function main() {
   let bl_num = await hre.ethers.provider.send("eth_blockNumber");
   let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
   let start_time = block.timestamp-100;
-  await citadel_factory.addPool(outside_token.address, start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF))
-  await setTimeout(async () => { console.log("Pool address:", await citadel_factory.pools(outside_token.address)); }, 3000);
+  await citadel_factory.addPool(outside_token.address, start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
+  await citadel_factory.addPool("0x3D5eccb772b6387FB48E0D970bd414D27D2245ef", start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
+  await citadel_factory.addPool("0x4B1308749dD122844A3527704c117c3Cb9d9D30C", start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), false);
+  await citadel_factory.addPool("0x32022d67d5a9Cbc317902EB2E94f255437A46169", start_time, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF),);
 }
 
 main()

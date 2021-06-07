@@ -15,11 +15,12 @@ interface ICitadelPool {
 
     function disable() external;
 
-    function updateTokensPerBlock(uint256 tokensPerBlock_) external;
-
-    function updateApyTax(uint256 apyTax_) external;
-
-    function updatePremiumCoeff(uint256 premiumCoeff_) external;
+    function updatePool(
+        uint256 apyTax_,
+        uint256 premiumCoeff_,
+        uint256 tokensPerBlock_,
+        bool enabled_
+    ) external;
 
     function deposit(uint256 amount) external;
 
@@ -53,7 +54,12 @@ interface ICitadelPool {
     );
 
     /// @dev Event emitted when the depositor claimed rewards
-    event Rewarded(uint256 date, address indexed borrower, IBEP20 indexed token, uint256 amount);
+    event Rewarded(
+        uint256 date,
+        address indexed borrower,
+        IBEP20 indexed token,
+        uint256 amount
+    );
 
     /// @dev Event emitted when the borrower has borrowed and repaid funds
     event FlashLoan(
@@ -62,5 +68,14 @@ interface ICitadelPool {
         address indexed receiver,
         uint256 amount,
         uint256 premium
+    );
+
+    /// @dev Event emitted for diagram drawing
+    event totalHistory(
+        uint256 date,
+        address indexed user,
+        uint256 totalDeposited,
+        uint256 totalBorrowed,
+        uint256 totalProfit
     );
 }
