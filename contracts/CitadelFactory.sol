@@ -143,5 +143,12 @@ contract CitadelFactory is AccessControl {
         return _rewardInfo;
     }
 
+    function claimAllRewards() public {
+        for (uint256 i = 0; i < _poolList.length; i++) {
+            _poolList[i].pool.claimRewards(msg.sender);
+            _poolList[i].pool.claimCtl(msg.sender);
+        }
+    }
+
     event Created(IBEP20 token, CitadelPool pool);
 }

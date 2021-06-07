@@ -610,31 +610,33 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice Withdraw rewards from pool in CTL tokens
-     * @param amount Rewards amount
+     * @notice Claim all rewards from pool in original tokens
+     * @param spender Spender address
      */
-    function claimReward(uint256 amount) public override onlyEnabled {
-        Stake storage account = userStaked[msg.sender];
+    function claimRewards(address spender) public override onlyEnabled {
         require(
-            amount > 0 && amount <= availableReward(msg.sender),
-            "Pool: Amount should be less or equal then available reward"
+            msg.sender == _owner,
+            "Pool: This function must called from factory"
         );
+        uint256 amount = availableReward(spender);
+        Stake storage account = userStaked[spender];
         account.claimedReward = account.claimedReward.add(amount);
 
-        token.transfer(msg.sender, amount);
-        emit Rewarded(block.timestamp, msg.sender, token, amount);
+        token.transfer(spender, amount);
+        emit Rewarded(block.timestamp, spender, token, amount);
     }
 
     /**
-     * @notice Withdraw rewards from pool in CTL tokens
-     * @param amount Rewards amount
+     * @notice Claim all rewards from pool in CTL tokens
+     * @param spender Spender address
      */
-    function claimCtl(uint256 amount) public override onlyEnabled {
-        Stake storage account = userStaked[msg.sender];
+    function claimCtl(address spender) public override onlyEnabled {
         require(
-            amount > 0 && amount <= availableCtl(msg.sender),
-            "Pool: Amount should be less or equal then available reward"
+            msg.sender == _owner,
+            "Pool: This function must called from factory"
         );
+        uint256 amount = availableCtl(spender);
+        Stake storage account = userStaked[spender];
         account.claimedCtl = account.claimedCtl.add(amount);
 
         ctlToken.transfer(msg.sender, amount);
@@ -925,7 +927,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     function _updateTop(Top[10] storage array, uint256 amount) internal {
         uint256 _index;
         for (uint256 i = 0; i < array.length; i++) {
-            if (array[i].user == msg.sender){
+            if (array[i].user == msg.sender) {
                 _index = i;
                 break;
             }
@@ -933,10 +935,10 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
                 _index = i;
             }
         }
-        if(amount > array[_index].staked || msg.sender == array[_index].user){
+        if (amount > array[_index].staked || msg.sender == array[_index].user) {
             array[_index] = Top({user: msg.sender, staked: amount});
         }
-        if(amount == 0){
+        if (amount == 0) {
             array[_index] = Top({user: address(0), staked: 0});
         }
     }

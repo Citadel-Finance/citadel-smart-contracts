@@ -26,9 +26,9 @@ interface ICitadelPool {
 
     function withdraw(uint256 amount) external;
 
-    function claimReward(uint256 amount) external;
+    function claimRewards(address spender) external;
 
-    function claimCtl(uint256 amount) external;
+    function claimCtl(address spender) external;
 
     function flashLoan(
         address receiver,
