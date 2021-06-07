@@ -18,7 +18,7 @@ let user4;
 ethers.getSigners().then(val => {
   [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4] = val;
 });
-
+/*
 describe("Pool unit test", () => {
   let OutsideToken;
   let CTLToken;
@@ -59,7 +59,7 @@ describe("Pool unit test", () => {
 
     await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
-    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
+    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
     let lp_pool_addr = await ctl_factory.pools(outside_token.address);
     ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
@@ -88,7 +88,7 @@ describe("Pool unit test", () => {
 
     it("Tokens whitelist may be set only admin: fail", async () => {
       try {
-        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'));
+        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'), true);
       }
       catch (e) {
         await expect(e.message).to.include('CitadelFactory: Caller is not a admin')
@@ -387,30 +387,6 @@ describe("Pool unit test", () => {
   });
 
   describe("Claim reward", () => {
-    it("Claim disabled token: fail", async () => {
-      await ctl_factory.connect(lp_pool_owner).disablePool(outside_token.address);
-      try {
-        await ctl_pool.connect(borrower).claimReward(parseEther('100'));
-      } catch (e) {
-        await expect(e.message).to.include('Pool: Pool disabled');
-      };
-    });
-
-    it("Claim invalid amount token (0): fail", async () => {
-      try {
-        await ctl_pool.connect(borrower).claimReward(0);
-      } catch (e) {
-        await expect(e.message).to.include("Pool: Amount should be less or equal then available reward");
-      };
-    });
-
-    it("Claim invalid amount token (> available reward): fail", async () => {
-      try {
-        await ctl_pool.connect(borrower).claimReward(parseEther('100'));
-      } catch (e) {
-        await expect(e.message).to.include("Pool: Amount should be less or equal then available reward");
-      };
-    });
 
     it("Claim reward: success", async () => {
       //deposit token to  pool
@@ -470,6 +446,11 @@ describe("Pool unit test", () => {
       await expect(
         (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
       ).to.be.equal(0);
+
+      ctl_factory.connect(liquidity_provider).claimAllRewards();
+      await expect(
+        await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
+      ).to.be.equal(0);
     })
   });
-});
+});*/

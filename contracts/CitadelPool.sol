@@ -567,11 +567,19 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             );
         }
         prevMintingBlock = block.number;
+
         _updateTop(topProviders, account.totalStaked);
 
         token.transferFrom(msg.sender, address(this), amount);
         _mint(msg.sender, staked);
         emit Deposited(block.timestamp, msg.sender, token, staked);
+        emit totalHistory(
+            block.timestamp,
+            msg.sender,
+            totalStaked,
+            borrowed,
+            totalProfit
+        );
     }
 
     /**
@@ -586,10 +594,10 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         );
         totalStaked = totalStaked.sub(amount);
         account.totalStaked = account.totalStaked.sub(amount);
+
         _checkCurDay();
         _subDailyStaked(amount);
         _subMissedProfit(msg.sender, amount.mul(prevTps).div(10**_decimals));
-        _burn(msg.sender, amount);
 
         uint256 minted = ctlToken.mint();
         if (minted > 0) {
@@ -606,7 +614,15 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         _updateTop(topProviders, account.totalStaked);
 
         token.transfer(msg.sender, amount);
+        _burn(msg.sender, amount);
         emit Withdrew(block.timestamp, msg.sender, token, amount);
+        emit totalHistory(
+            block.timestamp,
+            msg.sender,
+            totalStaked,
+            borrowed,
+            totalProfit
+        );
     }
 
     /**
@@ -618,12 +634,14 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
-        uint256 amount = availableReward(spender);
-        Stake storage account = userStaked[spender];
-        account.claimedReward = account.claimedReward.add(amount);
+        if (enabled) {
+            uint256 amount = availableReward(spender);
+            Stake storage account = userStaked[spender];
+            account.claimedReward = account.claimedReward.add(amount);
 
-        token.transfer(spender, amount);
-        emit Rewarded(block.timestamp, spender, token, amount);
+            token.transfer(spender, amount);
+            emit Rewarded(block.timestamp, spender, token, amount);
+        }
     }
 
     /**
@@ -635,12 +653,14 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
-        uint256 amount = availableCtl(spender);
-        Stake storage account = userStaked[spender];
-        account.claimedCtl = account.claimedCtl.add(amount);
+        if (enabled) {
+            uint256 amount = availableCtl(spender);
+            Stake storage account = userStaked[spender];
+            account.claimedCtl = account.claimedCtl.add(amount);
 
-        ctlToken.transfer(msg.sender, amount);
-        emit Rewarded(block.timestamp, msg.sender, ctlToken, amount);
+            ctlToken.transfer(msg.sender, amount);
+            emit Rewarded(block.timestamp, msg.sender, ctlToken, amount);
+        }
     }
 
     /**
@@ -687,6 +707,13 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         loan.profit = loan.profit.add(premium);
         loan.lock = false;
         emit FlashLoan(block.timestamp, msg.sender, receiver, amount, premium);
+        emit totalHistory(
+            block.timestamp,
+            msg.sender,
+            totalStaked,
+            borrowed,
+            totalProfit
+        );
     }
 
     /**

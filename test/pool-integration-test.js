@@ -59,11 +59,11 @@ describe("Pool integration tests", () => {
 
         await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
-        await ctl_factory.addPool(outside_token.address, start_time, parseEther("1000"), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF));
+        await ctl_factory.addPool(outside_token.address, start_time, parseEther("1000"), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
         let lp_pool_addr = await ctl_factory.pools(outside_token.address);
         ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
-        await ctl_factory.addPool(outside_token_8.address, start_time, parseEther("1000"), parseUnits(process.env.POOL_APY_TAX, 8), parseUnits(process.env.POOL_PREMIUM_COEF, 8));
+        await ctl_factory.addPool(outside_token_8.address, start_time, parseEther("1000"), parseUnits(process.env.POOL_APY_TAX, 8), parseUnits(process.env.POOL_PREMIUM_COEF, 8), true);
         let lp_pool_8_addr = await ctl_factory.pools(outside_token_8.address);
         ctl_pool_8 = await CitadelPool.attach(lp_pool_8_addr);
 
@@ -104,7 +104,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(parseEther("7"));
             await expect(
                 await ctl_pool.ctlTps()
-            ).to.be.equal(parseEther("1.51057401812689"))
+            ).to.be.equal(parseEther("8.056394763343403826"));
 
             //user1 check
             await expect(
@@ -143,6 +143,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("14"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("9.063444108761329304"));
 
 
             //user2 check
@@ -187,6 +190,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("28"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("9.818731117824773412"));
 
             //user3 check
             await expect(
@@ -234,6 +240,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("49"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("10.106459502229894976"));
 
             //user2 check
             await expect(
@@ -256,7 +265,7 @@ describe("Pool integration tests", () => {
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
             //user2 withdrew
             await ctl_pool.connect(user2).withdraw(parseEther('1000'));
-            await ctl_pool.connect(user2).claimReward(parseEther('20'));
+            await ctl_factory.connect(user2).claimAllRewards();
             //common
             await expect(
                 await ctl_pool.tps()
@@ -274,6 +283,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("49"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("10.274498487274425307"));
 
 
             //user2 check
@@ -291,14 +303,14 @@ describe("Pool integration tests", () => {
             ).to.be.equal(false);
             await expect(
                 await ctl_pool.availableReward(user2.address)
-            ).to.be.equal(parseEther("2.499999999999997753"));
+            ).to.be.equal(0);
 
             /// 7 day
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
             //user2 deposited
             await outside_token.connect(user1).approve(ctl_pool.address, parseEther('2000'));
             await ctl_pool.connect(user1).deposit(parseEther('2000'));
-            await ctl_pool.connect(user1).claimReward(parseEther('10'));
+            await ctl_factory.connect(user1).claimAllRewards();
 
             //common
             await expect(
@@ -322,6 +334,9 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.totalProfit()
             ).to.be.equal(parseEther("63"));
+            await expect(
+                await ctl_pool.ctlTps()
+            ).to.be.equal(parseEther("10.652475052727367224"));
 
             //user1 check
             await expect(
@@ -338,7 +353,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(false);
             await expect(
                 await ctl_pool.availableReward(user1.address)
-            ).to.be.equal(parseEther("8.754630212926795754"));
+            ).to.be.equal(0);
 
             /// 10 day
             await hre.ethers.provider.send("evm_increaseTime", [3 * 86400]);
@@ -381,7 +396,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(true);
             await expect(
                 await ctl_pool.availableReward(user1.address)
-            ).to.be.equal(parseEther("8.754630212926795754"));
+            ).to.be.equal(0);
 
             /// 11 day
             await hre.ethers.provider.send("evm_increaseTime", [86400]);
@@ -674,7 +689,7 @@ describe("Pool integration tests", () => {
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
             //user2 withdrew
             await ctl_pool_8.connect(user2).withdraw(parseUnits('1000', 8));
-            await ctl_pool_8.connect(user2).claimReward(parseUnits('20', 8));
+            await ctl_factory.connect(user2).claimAllRewards();
             //common
             await expect(
                 await ctl_pool_8.tps()
@@ -709,14 +724,14 @@ describe("Pool integration tests", () => {
             ).to.be.equal(false);
             await expect(
                 await ctl_pool_8.availableReward(user2.address)
-            ).to.be.equal(parseUnits("2.49996001", 8));
+            ).to.be.equal(0);
 
             /// 7 day
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
             //user2 deposited
             await outside_token_8.connect(user1).approve(ctl_pool_8.address, parseUnits('2000', 8));
             await ctl_pool_8.connect(user1).deposit(parseUnits('2000', 8));
-            await ctl_pool_8.connect(user1).claimReward(parseUnits('10', 8));
+            await ctl_factory.connect(user1).claimAllRewards();
 
             //common
             await expect(
@@ -756,7 +771,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(false);
             await expect(
                 await ctl_pool_8.availableReward(user1.address)
-            ).to.be.equal(parseUnits("8.75461226", 8));
+            ).to.be.equal(0);
 
             /// 10 day
             await hre.ethers.provider.send("evm_increaseTime", [3 * 86400]);
@@ -799,7 +814,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(true);
             await expect(
                 await ctl_pool_8.availableReward(user1.address)
-            ).to.be.equal(parseUnits("8.75461226", 8));
+            ).to.be.equal(0);
 
             /// 11 day
             await hre.ethers.provider.send("evm_increaseTime", [86400]);
