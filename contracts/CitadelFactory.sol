@@ -23,14 +23,15 @@ contract CitadelFactory is AccessControl {
         CitadelPool pool;
         IBEP20 token;
         bool enabled;
+    }
+
+    struct PoolsRewardInfo {
+        CitadelPool pool;
+        uint256 decimals;
+        string symbol;
         uint256 availableReward;
         uint256 availableCtl;
         bool isAdmin;
-    }
-
-    struct RewardInfo {
-        uint256 availableReward;
-        uint256 availableCtl;
     }
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -66,7 +67,7 @@ contract CitadelFactory is AccessControl {
             "CitadelFactory: Given address is not contract"
         );
 
-        if(startTime==0) {
+        if (startTime == 0) {
             startTime = block.timestamp;
         }
 
@@ -125,22 +126,40 @@ contract CitadelFactory is AccessControl {
             _poolInfo[i] = PoolInfo({
                 pool: _poolList[i].pool,
                 token: _poolList[i].token,
-                enabled: _poolList[i].pool.enabled(),
-                availableReward: _poolList[i].pool.availableReward(msg.sender),
-                availableCtl: _poolList[i].pool.availableCtl(msg.sender),
-                isAdmin: _poolList[i].pool.hasRole(_poolList[i].pool.ADMIN_ROLE(), msg.sender)
+                enabled: _poolList[i].pool.enabled()
             });
         }
         return _poolInfo;
     }
 
-    function totalAvailableReward() public view returns (RewardInfo memory) {
-        RewardInfo memory _rewardInfo;
+    function poolsAvailableReward(address user)
+        public
+        view
+        returns (PoolsRewardInfo[] memory)
+    {
+        PoolsRewardInfo[] memory _poolRewards =
+            new PoolsRewardInfo[](_poolList.length);
         for (uint256 i = 0; i < _poolList.length; i++) {
-            _rewardInfo.availableReward = _rewardInfo.availableReward.add(_poolList[i].pool.availableReward(msg.sender));
-            _rewardInfo.availableCtl = _rewardInfo.availableCtl.add(_poolList[i].pool.availableCtl(msg.sender));
+            _poolRewards[i] = PoolsRewardInfo({
+                pool: _poolList[i].pool,
+                decimals: _poolList[i].pool.decimals(),
+                symbol: _poolList[i].pool.symbol(),
+                availableReward: _poolList[i].pool.availableReward(user),
+                availableCtl: _poolList[i].pool.availableCtl(user),
+                isAdmin: _poolList[i].pool.hasRole(ADMIN_ROLE, user)
+            });
         }
-        return _rewardInfo;
+        return _poolRewards;
+    }
+
+    function totalAvailableReward(address user) public view returns (uint256) {
+        uint256 availableCtl;
+        for (uint256 i = 0; i < _poolList.length; i++) {
+            availableCtl = availableCtl.add(
+                _poolList[i].pool.availableCtl(user)
+            );
+        }
+        return availableCtl;
     }
 
     function claimAllRewards() public {

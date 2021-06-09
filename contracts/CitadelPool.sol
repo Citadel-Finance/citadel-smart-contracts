@@ -17,7 +17,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     /**
      * @dev State of users stake
      * @param totalStaked Total staked added when funds are deposited, subtracted upon withdrawal
-     * @param missedProfit Missed profit increased on deposit_amount*prevTps when funds are deposited, and decreased when funds are withdrawal
+     * @param missedProfit Missed profit increased on deposit_amount*previous_tps when funds are deposited, and decreased when funds are withdrawal
      * @param signMissedProfit Sign of missed profit amount 0 - positive, 1 - negative
      * @param claimedReward Total amount of claimed rewards
      */
@@ -44,9 +44,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     struct CommonData {
         uint256 decimals;
         uint256 totalStaked;
-        uint256 dailyStaked;
         uint256 totalProfit;
-        uint256 receiptProfit;
         uint256 totalBorrowed;
         uint256 tokensPerBlock;
         uint256 apyTax;
@@ -54,7 +52,6 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         IBEP20 token;
         CTLToken ctlToken;
         bool enabled;
-        bool signDailyStaked;
         string symbol;
         string name;
     }
@@ -92,34 +89,23 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     /**
      * @dev State of liquidity pool
      */
-
-    /// @dev Current day from start time
-    uint256 public curDay;
-
     /// @dev Pools start time
     uint256 public startTime;
 
     /// @dev APY tax percent
     uint256 public apyTax; /////
 
-    /// @dev Profit for current day, is reset to zero every day
-    uint256 public receiptProfit;
-
     /// @dev Total given premium
     uint256 public totalProfit;
 
     /// @dev Tokens per staked amount
-    /// @dev prevTps Tokens per staked amount for previously day
     uint256 public tps;
-    uint256 public prevTps;
 
     /// @dev Balance of tokens
     uint256 public totalStaked;
 
     /// @dev Balance of tokens for current day, it reset to zero every day
     /// @dev Sign of daily staked tokens, false - positive, true - negative
-    uint256 private _dailyStaked;
-    bool private _signDailyStaked;
 
     /// @dev Borrowed and returned funds amount
     uint256 public borrowed;
@@ -262,7 +248,6 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         address recipient,
         uint256 amount
     ) internal {
-        _checkCurDay();
         Stake storage accountS = userStaked[sender];
         uint256 percent = amount.mul(10**_decimals).div(accountS.totalStaked);
         uint256 claimedReward =
@@ -410,10 +395,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             CommonData({
                 decimals: token.decimals(),
                 totalStaked: totalStaked,
-                signDailyStaked: _signDailyStaked,
-                dailyStaked: _dailyStaked,
                 totalProfit: totalProfit,
-                receiptProfit: receiptProfit,
                 totalBorrowed: borrowed,
                 tokensPerBlock: tokensPerBlock,
                 token: token,
@@ -472,13 +454,6 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     function disable() public override {
         require(msg.sender == _owner, "Pool: FORBIDDEN");
         enabled = false;
-    }
-
-    /**
-     * @notice Daily staked liquidity
-     */
-    function dailyStaked() public view override returns (bool, uint256) {
-        return (_signDailyStaked, _dailyStaked);
     }
 
     /**
@@ -541,7 +516,6 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Stake liquidity to pool
      * @param amount Funds amount
      */
-    // FIXME: add minting and tps calc for deposit, withdraw, claim and loans
     function deposit(uint256 amount) public override onlyEnabled {
         require(amount > 0, "Pool: Amount is invalid");
 
@@ -550,11 +524,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 staked = amount.sub(premium);
         totalStaked = totalStaked.add(staked);
         account.totalStaked = account.totalStaked.add(staked);
+        totalProfit = totalProfit.add(premium);
 
-        _checkCurDay();
-        _addProfit(premium);
-        _addDailyStaked(staked);
-        _addMissedProfit(msg.sender, staked.mul(prevTps).div(10**_decimals));
+        _addMissedProfit(msg.sender, staked.mul(tps).div(10**_decimals));
+
+        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
 
         uint256 minted = ctlToken.mint();
         if (minted > 0) {
@@ -594,27 +568,32 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         );
         totalStaked = totalStaked.sub(amount);
         account.totalStaked = account.totalStaked.sub(amount);
+        _subMissedProfit(msg.sender, amount.mul(tps).div(10**_decimals));
 
-        _checkCurDay();
-        _subDailyStaked(amount);
-        _subMissedProfit(msg.sender, amount.mul(prevTps).div(10**_decimals));
-
-        uint256 minted = ctlToken.mint();
-        if (minted > 0) {
-            ctlTps = ctlTps.add(
-                (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
-            );
-            _subMissedCtl(msg.sender, amount.mul(ctlTps).div(10**_decimals));
-            ctlTps = ctlTps.add(
-                tokensPerBlock.mul(10**_decimals).div(totalStaked)
-            );
+        if (totalStaked > 0) {
+            uint256 minted = ctlToken.mint();
+            if (minted > 0) {
+                ctlTps = ctlTps.add(
+                    (minted.sub(tokensPerBlock)).mul(10**_decimals).div(
+                        totalStaked
+                    )
+                );
+                _subMissedCtl(
+                    msg.sender,
+                    amount.mul(ctlTps).div(10**_decimals)
+                );
+                ctlTps = ctlTps.add(
+                    tokensPerBlock.mul(10**_decimals).div(totalStaked)
+                );
+            }
+            prevMintingBlock = block.number;
         }
-        prevMintingBlock = block.number;
 
         _updateTop(topProviders, account.totalStaked);
 
         token.transfer(msg.sender, amount);
         _burn(msg.sender, amount);
+
         emit Withdrew(block.timestamp, msg.sender, token, amount);
         emit totalHistory(
             block.timestamp,
@@ -629,18 +608,27 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Claim all rewards from pool in original tokens
      * @param spender Spender address
      */
-    function claimRewards(address spender) public override onlyEnabled {
+    function claimRewards(address spender) public override {
         require(
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
         if (enabled) {
             uint256 amount = availableReward(spender);
-            Stake storage account = userStaked[spender];
-            account.claimedReward = account.claimedReward.add(amount);
+            if (amount > 0) {
+                Stake storage account = userStaked[spender];
+                account.claimedReward = account.claimedReward.add(amount);
+                token.transfer(spender, amount);
 
-            token.transfer(spender, amount);
-            emit Rewarded(block.timestamp, spender, token, amount);
+                emit Rewarded(block.timestamp, spender, token, amount);
+                emit totalHistory(
+                    block.timestamp,
+                    spender,
+                    totalStaked,
+                    borrowed,
+                    totalProfit
+                );
+            }
         }
     }
 
@@ -648,18 +636,27 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Claim all rewards from pool in CTL tokens
      * @param spender Spender address
      */
-    function claimCtl(address spender) public override onlyEnabled {
+    function claimCtl(address spender) public override {
         require(
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
         if (enabled) {
             uint256 amount = availableCtl(spender);
-            Stake storage account = userStaked[spender];
-            account.claimedCtl = account.claimedCtl.add(amount);
+            if (amount > 0) {
+                Stake storage account = userStaked[spender];
+                account.claimedCtl = account.claimedCtl.add(amount);
 
-            ctlToken.transfer(msg.sender, amount);
-            emit Rewarded(block.timestamp, msg.sender, ctlToken, amount);
+                ctlToken.transfer(spender, amount);
+                emit Rewarded(block.timestamp, spender, ctlToken, amount);
+                emit totalHistory(
+                    block.timestamp,
+                    spender,
+                    totalStaked,
+                    borrowed,
+                    totalProfit
+                );
+            }
         }
     }
 
@@ -700,12 +697,13 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         );
         token.transferFrom(receiver, address(this), amount.add(premium));
 
-        _checkCurDay();
-        _addProfit(premium);
+        totalProfit = totalProfit.add(premium);
+        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
         returned = returned.add(amount);
         loan.returned = loan.returned.add(amount);
         loan.profit = loan.profit.add(premium);
         loan.lock = false;
+
         emit FlashLoan(block.timestamp, msg.sender, receiver, amount, premium);
         emit totalHistory(
             block.timestamp,
@@ -714,67 +712,6 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             borrowed,
             totalProfit
         );
-    }
-
-    /**
-     * @notice Add deposit amount to liquidity pools daily staked
-     * @param amount Deposit amount
-     */
-    function _addDailyStaked(uint256 amount) internal {
-        //dailyStaked is negative
-        if (_signDailyStaked) {
-            if (_dailyStaked > amount) {
-                _dailyStaked = _dailyStaked.sub(amount);
-            } else {
-                _dailyStaked = amount.sub(_dailyStaked);
-                _signDailyStaked = false;
-            }
-        } else {
-            _dailyStaked = _dailyStaked.add(amount);
-        }
-    }
-
-    /**
-     * @notice Subtract withdraw amount from liquidity pools daily staked
-     * @param amount Withdraw amount
-     */
-    function _subDailyStaked(uint256 amount) internal {
-        //dailyStaked is positive
-        if (!_signDailyStaked) {
-            if (_dailyStaked >= amount) {
-                _dailyStaked = _dailyStaked.sub(amount);
-            } else {
-                _dailyStaked = amount.sub(_dailyStaked);
-                _signDailyStaked = true;
-            }
-        } else {
-            _dailyStaked = _dailyStaked.add(amount);
-        }
-    }
-
-    /**
-     * @notice Receipt profit set in zero and save tps for previous day one times per day
-     */
-    function _checkCurDay() internal {
-        uint256 day = (block.timestamp.sub(startTime)).div(86400);
-        if (curDay < day) {
-            curDay = day;
-            receiptProfit = 0;
-            _dailyStaked = 0;
-            _signDailyStaked = false;
-            prevTps = tps;
-        }
-    }
-
-    /**
-     * @notice Add profit when premium distributed
-     * @param premium premium amount
-     */
-    function _addProfit(uint256 premium) internal {
-        receiptProfit = receiptProfit.add(premium);
-        totalProfit = totalProfit.add(premium);
-        //FIXME: tps = prevTps+receiptProfit/totalStaked or tps += receiptProfit/totalStaked ???
-        tps = prevTps.add(receiptProfit.mul(10**_decimals).div(totalStaked));
     }
 
     /**

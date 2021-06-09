@@ -18,7 +18,7 @@ let user4;
 ethers.getSigners().then(val => {
   [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4] = val;
 });
-/*
+
 describe("Pool unit test", () => {
   let OutsideToken;
   let CTLToken;
@@ -170,11 +170,6 @@ describe("Pool unit test", () => {
         await ctl_pool.connect(liquidity_provider).totalStaked()
       ).to.be.equal(parseEther('993'));
 
-      [sign, value] = await ctl_pool.dailyStaked();
-      await expect(sign).to.be.equal(false);
-      await expect(value).to.be.equal(parseEther('993'));
-
-
       await expect(
         (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
       ).to.be.equal(false);
@@ -243,23 +238,19 @@ describe("Pool unit test", () => {
         (await ctl_pool.userStaked(liquidity_provider.address)).totalStaked
       ).to.be.equal(parseEther('893'));
 
-      [sign, value] = await ctl_pool.dailyStaked();
-      await expect(sign).to.be.equal(false);
-      await expect(value).to.be.equal(parseEther('893'));
-
       //check missed profit
       await expect(
         (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
-      ).to.be.equal(false);
+      ).to.be.equal(true);
       await expect(
         (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
-      ).to.be.equal(parseEther('0'));
+      ).to.be.equal(parseEther('0.7049345417925478'));
 
       // FIXME:
       // 893*7/993 = 6,295065458207452165 (6,295065458207451854 in EVM?) ethers
       await expect(
         await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
-      ).to.be.equal("6295065458207451854");
+      ).to.be.equal(parseEther("6.999999999999999654"));
     });
   });
 
@@ -438,7 +429,7 @@ describe("Pool unit test", () => {
       //FIXME: EVM math
       await expect(
         await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
-      ).to.be.equal(parseEther("12.999999999999999783"));
+      ).to.be.equal(parseEther("12.99999999999999879"));
 
       await expect(
         (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
@@ -447,10 +438,11 @@ describe("Pool unit test", () => {
         (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
       ).to.be.equal(0);
 
-      ctl_factory.connect(liquidity_provider).claimAllRewards();
+      await ctl_factory.connect(liquidity_provider).claimAllRewards();
+
       await expect(
         await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(0);
     })
   });
-});*/
+});

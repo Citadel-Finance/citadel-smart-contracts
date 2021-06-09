@@ -8,6 +8,7 @@
     "test": "npx hardhat --network development test",
     "console": "npx hardhat console --network development",
     "deploy-all-develop": "npx hardhat run --network development scripts/deploy_all.js",
+    "deposit-withdraw-develop": "npx hardhat run --network development scripts/deposit_withdraw.js",
     "deploy-all-bsc_test": "npx hardhat run --network bsc_test scripts/deploy_all.js",
     "add_pool-bsc_test": "npx hardhat run --network bsc_test scripts/add_pool.js"
   },
