@@ -18,7 +18,12 @@ module.exports = {
     bsc_test: {
       url: "https://data-seed-prebsc-1-s1.binance.org:8545",
       chainId: 97,
-      accounts: [process.env.SECRET_KEY],
+      accounts: [process.env.SECRET_KEY]
+    },
+    bsc_test_2: {
+      url: "https://data-seed-prebsc-2-s3.binance.org:8545",
+      chainId: 97,
+      accounts: [process.env.SECRET_KEY]
     }
   },
   solidity: {
@@ -26,7 +31,7 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 300
+        runs: 200
       }
     }
   },

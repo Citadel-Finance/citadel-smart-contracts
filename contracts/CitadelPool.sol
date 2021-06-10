@@ -587,6 +587,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
                 );
             }
             prevMintingBlock = block.number;
+        } else {
+            //stop minting
+            _subMissedCtl(msg.sender, amount.mul(ctlTps).div(10**_decimals));
         }
 
         _updateTop(topProviders, account.totalStaked);
