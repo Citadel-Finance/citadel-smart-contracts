@@ -32,6 +32,7 @@ describe("Pool integration tests", () => {
     let ctl_pool_8;
     let fl_receiver;
     let start_time;
+    let add_pool_18_bl_num;
 
     beforeEach(async () => {
         require('dotenv').config();
@@ -60,10 +61,13 @@ describe("Pool integration tests", () => {
         await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
         await ctl_factory.addPool(outside_token.address, start_time, parseEther("1000"), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
+        add_pool_18_bl_num = await hre.ethers.provider.send("eth_blockNumber");
+
         let lp_pool_addr = await ctl_factory.pools(outside_token.address);
         ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
         await ctl_factory.addPool(outside_token_8.address, start_time, parseEther("1000"), parseUnits(process.env.POOL_APY_TAX, 8), parseUnits(process.env.POOL_PREMIUM_COEF, 8), true);
+        console.log("add pool 8:", await hre.ethers.provider.send("eth_blockNumber")/1);
         let lp_pool_8_addr = await ctl_factory.pools(outside_token_8.address);
         ctl_pool_8 = await CitadelPool.attach(lp_pool_8_addr);
 
@@ -82,6 +86,7 @@ describe("Pool integration tests", () => {
             //user1 deposited
             await outside_token.connect(user1).approve(ctl_pool.address, parseEther('1000'));
             await ctl_pool.connect(user1).deposit(parseEther('1000'));
+            console.log("user1 staked:", (await hre.ethers.provider.send("eth_blockNumber") - add_pool_18_bl_num)/1);
 
             //common
             await expect(
@@ -114,9 +119,15 @@ describe("Pool integration tests", () => {
                 await ctl_pool.availableReward(user1.address)
             ).to.be.equal(parseEther("6.999999999999999654"));
 
+            await expect(
+                await ctl_pool.availableCtl(user1.address)
+            ).to.be.equal(parseEther("999.999999999999999654"));
+
+
             //user2 deposited
             await outside_token.connect(user2).approve(ctl_pool.address, parseEther('1000'));
             await ctl_pool.connect(user2).deposit(parseEther('1000'));
+            console.log("user2 staked:", (await hre.ethers.provider.send("eth_blockNumber") - add_pool_18_bl_num)/1);
 
             //common
             await expect(
@@ -131,7 +142,6 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.ctlTps()
             ).to.be.equal(parseEther("9.063444108761329304"));
-
 
             //user2 check
             await expect(
@@ -149,6 +159,12 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.availableReward(user2.address)
             ).to.be.equal(parseEther("3.499999999999999827"));
+            await expect(
+                await ctl_pool.availableCtl(user1.address)
+            ).to.be.equal(parseEther("1999.999999999999999308"));
+            await expect(
+                await ctl_pool.availableCtl(user2.address)
+            ).to.be.equal(parseEther("499.999999999999999827"));
 
             /// 1 day
             await hre.ethers.provider.send("evm_increaseTime", [86500]);
@@ -156,6 +172,8 @@ describe("Pool integration tests", () => {
             //user3 deposited
             await outside_token.connect(user3).approve(ctl_pool.address, parseEther('2000'));
             await ctl_pool.connect(user3).deposit(parseEther('2000'));
+            console.log("user3 staked:", (await hre.ethers.provider.send("eth_blockNumber") - add_pool_18_bl_num)/1);
+
             //common
             await expect(
                 await ctl_pool.tps()
@@ -186,6 +204,16 @@ describe("Pool integration tests", () => {
             await expect(
                 await ctl_pool.availableReward(user3.address)
             ).to.be.equal(parseEther("6.999999999999999654"));
+
+            await expect(
+                await ctl_pool.availableCtl(user1.address)
+            ).to.be.equal(parseEther("2749.999999999999998552"));
+            await expect(
+                await ctl_pool.availableCtl(user2.address)
+            ).to.be.equal(parseEther("1249.999999999999999071"));
+            await expect(
+                await ctl_pool.availableCtl(user3.address)
+            ).to.be.equal(parseEther("499.999999999999998834"));
 
 
             /// 3 day
@@ -242,7 +270,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(parseEther("49"));
             await expect(
                 await ctl_pool.ctlTps()
-            ).to.be.equal(parseEther("10.274498487274425307"));
+            ).to.be.equal(parseEther("10.442537472318955638"));
 
 
             //user2 check
@@ -281,7 +309,7 @@ describe("Pool integration tests", () => {
             ).to.be.equal(parseEther("63"));
             await expect(
                 await ctl_pool.ctlTps()
-            ).to.be.equal(parseEther("10.652475052727367224"));
+            ).to.be.equal(parseEther("10.946506226256211527"));
 
             //user1 check
             await expect(

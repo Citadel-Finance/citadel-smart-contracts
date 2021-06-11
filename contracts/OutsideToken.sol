@@ -146,7 +146,7 @@ contract OutsideToken is IBEP20, Ownable{
         _transfer(sender, recipient, amount);
         _approve(
             sender,
-            recipient,
+            msg.sender,
             _allowances[sender][msg.sender].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"

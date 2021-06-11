@@ -645,6 +645,10 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
             "Pool: This function must called from factory"
         );
         if (enabled) {
+            if (totalStaked > 0) {
+                uint256 minted = ctlToken.mint();
+                ctlTps = ctlTps.add(minted.mul(10**_decimals).div(totalStaked));
+            }
             uint256 amount = availableCtl(spender);
             if (amount > 0) {
                 Stake storage account = userStaked[spender];
@@ -689,6 +693,11 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         loan.lock = true;
         borrowed = borrowed.add(amount);
         loan.borrowed = loan.borrowed.add(amount);
+        totalProfit = totalProfit.add(premium);
+        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
+        returned = returned.add(amount);
+        loan.returned = loan.returned.add(amount);
+        loan.profit = loan.profit.add(premium);
 
         token.transfer(receiver, amount);
         IFlashLoanReceiver(receiver).executeOperation(
@@ -700,11 +709,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         );
         token.transferFrom(receiver, address(this), amount.add(premium));
 
-        totalProfit = totalProfit.add(premium);
-        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
-        returned = returned.add(amount);
-        loan.returned = loan.returned.add(amount);
-        loan.profit = loan.profit.add(premium);
+        uint256 minted = ctlToken.mint();
+        ctlTps = ctlTps.add(minted.mul(10**_decimals).div(totalStaked));
+
         loan.lock = false;
 
         emit FlashLoan(block.timestamp, msg.sender, receiver, amount, premium);

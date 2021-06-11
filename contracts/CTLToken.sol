@@ -156,7 +156,7 @@ contract CTLToken is IBEP20, AccessControl {
         _transfer(sender, recipient, amount);
         _approve(
             sender,
-            recipient,
+            msg.sender,
             _allowances[sender][msg.sender].sub(
                 amount,
                 "BEP20: transfer amount exceeds allowance"
