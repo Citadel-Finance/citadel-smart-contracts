@@ -4,16 +4,16 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IBEP20.sol";
 
-contract OutsideToken is IBEP20, Ownable{
+contract OutsideToken is IERC20, IBEP20, Ownable {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
-    uint256 private _maxTotalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
@@ -21,74 +21,23 @@ contract OutsideToken is IBEP20, Ownable{
     constructor(
         string memory name_,
         string memory symbol_,
-        uint256 decimals_,
-        uint256 maxTotalSupply_
+        uint256 decimals_
     ) {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        _maxTotalSupply = maxTotalSupply_;
     }
 
-    /**
-     * @dev Returns the bep token owner.
-     */
-    function getOwner() public view virtual override returns (address) {
-        return owner();
-    }
-
-    /**
-     * @dev Returns the token decimals.
-     */
-    function decimals() public view virtual override returns (uint256) {
-        return _decimals;
-    }
-
-    /**
-     * @dev Returns the token symbol.
-     */
-    function symbol() public view virtual override returns (string memory) {
-        return _symbol;
-    }
-
-    /**
-     * @dev Returns the token name.
-     */
-    function name() public view virtual override returns (string memory) {
-        return _name;
-    }
-
-    /**
-     * @dev See {BEP20-totalSupply}.
-     */
-    function totalSupply() public view virtual override returns (uint256) {
+    function totalSupply() public view override returns (uint256) {
         return _totalSupply;
     }
 
-    /**
-     * @dev See {BEP20-balanceOf}.
-     */
-    function balanceOf(address account)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
 
-    /**
-     * @dev See {BEP20-transfer}.
-     *
-     * Requirements:
-     *
-     * - `recipient` cannot be the zero address.
-     * - the caller must have a balance of at least `amount`.
-     */
     function transfer(address recipient, uint256 amount)
         public
-        virtual
         override
         returns (bool)
     {
@@ -96,29 +45,17 @@ contract OutsideToken is IBEP20, Ownable{
         return true;
     }
 
-    /**
-     * @dev See {BEP20-allowance}.
-     */
     function allowance(address owner, address spender)
         public
         view
-        virtual
         override
         returns (uint256)
     {
         return _allowances[owner][spender];
     }
 
-    /**
-     * @dev See {BEP20-approve}.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     */
     function approve(address spender, uint256 amount)
         public
-        virtual
         override
         returns (bool)
     {
@@ -126,23 +63,11 @@ contract OutsideToken is IBEP20, Ownable{
         return true;
     }
 
-    /**
-     * @dev See {BEP20-transferFrom}.
-     *
-     * Emits an {Approval} event indicating the updated allowance. This is not
-     * required by the EIP. See the note at the beginning of {BEP20};
-     *
-     * Requirements:
-     * - `sender` and `recipient` cannot be the zero address.
-     * - `sender` must have a balance of at least `amount`.
-     * - the caller must have allowance for `sender`'s tokens of at least
-     * `amount`.
-     */
     function transferFrom(
         address sender,
         address recipient,
         uint256 amount
-    ) public virtual override returns (bool) {
+    ) public override returns (bool) {
         _transfer(sender, recipient, amount);
         _approve(
             sender,
@@ -155,21 +80,24 @@ contract OutsideToken is IBEP20, Ownable{
         return true;
     }
 
-    /**
-     * @dev Atomically increases the allowance granted to `spender` by the caller.
-     *
-     * This is an alternative to {approve} that can be used as a mitigation for
-     * problems described in {BEP20-approve}.
-     *
-     * Emits an {Approval} event indicating the updated allowance.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     */
+    function name() public view override returns (string memory) {
+        return _name;
+    }
+
+    function decimals() public view override returns (uint256) {
+        return _decimals;
+    }
+
+    function symbol() public view override returns (string memory) {
+        return _symbol;
+    }
+
+    function getOwner() public view override returns (address) {
+        return owner();
+    }
+
     function increaseAllowance(address spender, uint256 addedValue)
         public
-        virtual
         returns (bool)
     {
         _approve(
@@ -180,23 +108,8 @@ contract OutsideToken is IBEP20, Ownable{
         return true;
     }
 
-    /**
-     * @dev Atomically decreases the allowance granted to `spender` by the caller.
-     *
-     * This is an alternative to {approve} that can be used as a mitigation for
-     * problems described in {BEP20-approve}.
-     *
-     * Emits an {Approval} event indicating the updated allowance.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     * - `spender` must have allowance for the caller of at least
-     * `subtractedValue`.
-     */
     function decreaseAllowance(address spender, uint256 subtractedValue)
         public
-        virtual
         returns (bool)
     {
         _approve(
@@ -210,38 +123,16 @@ contract OutsideToken is IBEP20, Ownable{
         return true;
     }
 
-    /**
-     * @dev Creates `amount` tokens and assigns them to `msg.sender`, increasing
-     * the total supply.
-     *
-     * Requirements
-     *
-     * - `msg.sender` must be the token owner
-     */
-    function mint(uint256 amount) public virtual onlyOwner returns (bool) {
+    function mint(uint256 amount) public onlyOwner returns (bool) {
         _mint(msg.sender, amount);
         return true;
     }
 
-    /**
-     * @dev Moves tokens `amount` from `sender` to `recipient`.
-     *
-     * This is internal function is equivalent to {transfer}, and can be used to
-     * e.g. implement automatic token fees, slashing mechanisms, etc.
-     *
-     * Emits a {Transfer} event.
-     *
-     * Requirements:
-     *
-     * - `sender` cannot be the zero address.
-     * - `recipient` cannot be the zero address.
-     * - `sender` must have a balance of at least `amount`.
-     */
     function _transfer(
         address sender,
         address recipient,
         uint256 amount
-    ) internal virtual {
+    ) internal {
         require(sender != address(0), "BEP20: transfer from the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
 
@@ -253,39 +144,14 @@ contract OutsideToken is IBEP20, Ownable{
         emit Transfer(sender, recipient, amount);
     }
 
-    /** @dev Creates `amount` tokens and assigns them to `account`, increasing
-     * the total supply.
-     *
-     * Emits a {Transfer} event with `from` set to the zero address.
-     *
-     * Requirements
-     *
-     * - `to` cannot be the zero address.
-     */
-    function _mint(address account, uint256 amount) internal virtual {
+    function _mint(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: mint to the zero address");
         _totalSupply = _totalSupply.add(amount);
-        require(
-            _totalSupply <= _maxTotalSupply,
-            "Total supply reached maximum"
-        );
-
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
     }
 
-    /**
-     * @dev Destroys `amount` tokens from `account`, reducing the
-     * total supply.
-     *
-     * Emits a {Transfer} event with `to` set to the zero address.
-     *
-     * Requirements
-     *
-     * - `account` cannot be the zero address.
-     * - `account` must have at least `amount` tokens.
-     */
-    function _burn(address account, uint256 amount) internal virtual {
+    function _burn(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: burn from the zero address");
 
         _balances[account] = _balances[account].sub(
@@ -296,24 +162,11 @@ contract OutsideToken is IBEP20, Ownable{
         emit Transfer(account, address(0), amount);
     }
 
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the `owner`s tokens.
-     *
-     * This is internal function is equivalent to `approve`, and can be used to
-     * e.g. set automatic allowances for certain subsystems, etc.
-     *
-     * Emits an {Approval} event.
-     *
-     * Requirements:
-     *
-     * - `owner` cannot be the zero address.
-     * - `spender` cannot be the zero address.
-     */
     function _approve(
         address owner,
         address spender,
         uint256 amount
-    ) internal virtual {
+    ) internal {
         require(owner != address(0), "BEP20: approve from the zero address");
         require(spender != address(0), "BEP20: approve to the zero address");
 
@@ -321,13 +174,7 @@ contract OutsideToken is IBEP20, Ownable{
         emit Approval(owner, spender, amount);
     }
 
-    /**
-     * @dev Destroys `amount` tokens from `account`.`amount` is then deducted
-     * from the caller's allowance.
-     *
-     * See {_burn} and {_approve}.
-     */
-    function _burnFrom(address account, uint256 amount) internal virtual {
+    function _burnFrom(address account, uint256 amount) internal {
         _burn(account, amount);
         _approve(
             account,

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.0;
 
-import "../interfaces/IBEP20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IFlashLoanReceiver {
     function executeOperation(
-        IBEP20 token,
+        IERC20 token,
         uint256 amount,
         uint256 premium,
         address initiator,

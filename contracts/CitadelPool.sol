@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.7.0;
+
 pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./CTLToken.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IBEP20.sol";
+import "./interfaces/ICTLToken.sol";
 import "./interfaces/ICitadelPool.sol";
 import "./interfaces/ILPToken.sol";
 import "./interfaces/IFlashLoanReceiver.sol";
 
 contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /**
      * @dev State of users stake
@@ -32,13 +39,13 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     }
 
     /**
-     * @dev Loaned and returned funds and added profit
+     * @dev Loaned funds and added profit
+     * @param borrowed Funds borrowed by the user
+     * @param profit Earned profit
      */
     struct Loan {
         uint256 borrowed;
-        uint256 returned;
         uint256 profit;
-        bool lock;
     }
 
     struct CommonData {
@@ -49,11 +56,13 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 tokensPerBlock;
         uint256 apyTax;
         uint256 premiumCoeff;
-        IBEP20 token;
-        CTLToken ctlToken;
+        uint256 tokensPerStaked;
+        uint256 ctlPerStaked;
+        IERC20 token;
+        ICTLToken ctlToken;
         bool enabled;
-        string symbol;
         string name;
+        string symbol;
     }
 
     struct UserData {
@@ -64,6 +73,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 availableReward;
         uint256 availableCtl;
         uint256 totalBorrowed;
+        uint256 totalProfit;
         bool is_admin;
     }
 
@@ -77,11 +87,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     string private _symbol;
     string private _name;
     address private _owner;
-
-    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    Top[10] topProviders;
-    Top[10] topKeepers;
+    bool private _lock;
+    Top[10] private _topProviders;
+    Top[10] private _topKeepers;
 
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -89,83 +97,81 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     /**
      * @dev State of liquidity pool
      */
-    /// @dev Pools start time
-    uint256 public startTime;
-
     /// @dev APY tax percent
-    uint256 public apyTax; /////
+    uint256 private _apyTax;
 
     /// @dev Total given premium
-    uint256 public totalProfit;
+    uint256 private _totalProfit;
 
     /// @dev Tokens per staked amount
-    uint256 public tps;
+    uint256 private _tps;
 
     /// @dev Balance of tokens
-    uint256 public totalStaked;
+    uint256 private _totalStaked;
 
     /// @dev Balance of tokens for current day, it reset to zero every day
     /// @dev Sign of daily staked tokens, false - positive, true - negative
 
-    /// @dev Borrowed and returned funds amount
-    uint256 public borrowed;
-    uint256 public returned;
+    /// @dev Borrowed funds amount
+    uint256 private _borrowed;
 
     /// @dev Minimal premium percent for borrowers
-    uint256 public premiumCoeff;
+    uint256 private _premiumCoeff;
 
     /// @dev true - enabled pool, false - disabled pool
-    bool public enabled;
+    bool private _enabled;
 
     /// @dev Outside token address
-    IBEP20 public immutable token;
+    IERC20 private immutable _token;
 
     /// @dev CTL-token settings
     /// @dev CTL-tokens per staked
-    CTLToken public immutable ctlToken;
-    uint256 public tokensPerBlock;
-    uint256 public prevMintingBlock;
-    uint256 public ctlTps;
+    ICTLToken private immutable _ctlToken;
+
+    uint256 private _tokensPerBlock;
+
+    uint256 private _prevMintingBlock;
+
+    uint256 private _ctlTps;
 
     mapping(address => Stake) public userStaked;
 
     mapping(address => Loan) public userLoaned;
 
     constructor(
-        IBEP20 token_,
-        CTLToken ctlToken_,
-        uint256 startTime_,
+        address token_,
+        address ctlToken_,
         uint256 apyTax_,
         uint256 premiumCoeff_,
         uint256 tokensPerBlock_,
         address admin_,
         bool enabled_
-    ) {
-        _name = string(abi.encodePacked("ct", token_.name()));
-        _symbol = string(abi.encodePacked("ct", token_.symbol()));
-        _decimals = token_.decimals();
+    ) AccessControl() {
+        _name = string(abi.encodePacked("ct", IBEP20(token_).name()));
+        _symbol = string(abi.encodePacked("ct", IBEP20(token_).symbol()));
+        _decimals = IBEP20(token_).decimals();
         _totalSupply = 0;
-        token = token_;
-        ctlToken = ctlToken_;
-        startTime = startTime_;
-        apyTax = apyTax_;
-        premiumCoeff = premiumCoeff_;
-        tokensPerBlock = tokensPerBlock_;
-        enabled = enabled_;
+        _token = IERC20(token_);
+        _ctlToken = ICTLToken(ctlToken_);
+        _apyTax = apyTax_;
+        _premiumCoeff = premiumCoeff_;
+        _tokensPerBlock = tokensPerBlock_;
+        _enabled = enabled_;
         _owner = msg.sender;
         _setupRole(DEFAULT_ADMIN_ROLE, admin_);
         _setupRole(ADMIN_ROLE, admin_);
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(BORROWER_ROLE, ADMIN_ROLE);
-        prevMintingBlock = block.number;
+        uint256 ctlStartBlock = ICTLToken(ctlToken_).startBlock();
+        if (block.number > ctlStartBlock) {
+            _prevMintingBlock = block.number;
+        } else {
+            _prevMintingBlock = ctlStartBlock;
+        }
     }
 
     modifier onlyEnabled() {
-        require(
-            block.timestamp > startTime,
-            "Pool: Current time is less than start time"
-        );
-        require(enabled, "Pool: Pool disabled");
+        require(_enabled, "Pool: Pool disabled");
         _;
     }
 
@@ -232,7 +238,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         onlyEnabled
         returns (bool)
     {
-        _transferLP(msg.sender, recipient, amount);
+        _transferPoolState(msg.sender, recipient, amount);
         _transfer(msg.sender, recipient, amount);
         return true;
     }
@@ -243,7 +249,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @param recipient Recipient address
      * @param amount Funds amount
      */
-    function _transferLP(
+    function _transferPoolState(
         address sender,
         address recipient,
         uint256 amount
@@ -267,6 +273,9 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         } else {
             _addMissedProfit(recipient, missedProfit);
         }
+        uint256 minted = _ctlToken.mint();
+        _ctlTps = _ctlTps.add(minted.mul(10**_decimals).div(_totalStaked));
+        _prevMintingBlock = block.number;
     }
 
     /**
@@ -316,7 +325,7 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         address recipient,
         uint256 amount
     ) public virtual override onlyEnabled returns (bool) {
-        _transferLP(sender, recipient, amount);
+        _transferPoolState(sender, recipient, amount);
         _transfer(sender, recipient, amount);
         _approve(
             sender,
@@ -393,18 +402,20 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     function getCommonData() public view returns (CommonData memory) {
         return
             CommonData({
-                decimals: token.decimals(),
-                totalStaked: totalStaked,
-                totalProfit: totalProfit,
-                totalBorrowed: borrowed,
-                tokensPerBlock: tokensPerBlock,
-                token: token,
-                ctlToken: ctlToken,
-                symbol: token.symbol(),
-                name: token.name(),
-                enabled: enabled,
-                apyTax: apyTax,
-                premiumCoeff: premiumCoeff
+                decimals: IBEP20(address(_token)).decimals(),
+                totalStaked: _totalStaked,
+                totalProfit: _totalProfit,
+                totalBorrowed: _borrowed,
+                tokensPerBlock: _tokensPerBlock,
+                apyTax: _apyTax,
+                premiumCoeff: _premiumCoeff,
+                tokensPerStaked: _tps,
+                ctlPerStaked: _ctlTps,
+                token: _token,
+                ctlToken: _ctlToken,
+                enabled: _enabled,
+                name: IBEP20(address(_token)).name(),
+                symbol: IBEP20(address(_token)).symbol()
             });
     }
 
@@ -422,52 +433,60 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
                 availableReward: availableReward(user),
                 availableCtl: availableCtl(user),
                 totalBorrowed: userLoaned[user].borrowed,
+                totalProfit: userLoaned[user].profit,
                 is_admin: hasRole(ADMIN_ROLE, user)
             });
+    }
+
+    function prevMintingBlock() public view override returns (uint256) {
+        return _prevMintingBlock;
+    }
+
+    function tokensPerBlock() public view override returns (uint256) {
+        return _tokensPerBlock;
     }
 
     /**
      * @notice get top 5 liquidity providers
      */
     function getTopProviders() public view returns (Top[10] memory) {
-        return topProviders;
+        return _topProviders;
     }
 
     /**
      * @notice get top 5 liquidity providers
      */
     function getTopKeepers() public view returns (Top[10] memory) {
-        return topKeepers;
+        return _topKeepers;
+    }
+
+    function enabled() public view returns (bool) {
+        return _enabled;
     }
 
     /** @notice Enable pool for staking and loans
      * The Citadel factory called this function as owner of the pool
      */
-    function enable() public override {
+    function enable() public {
         require(msg.sender == _owner, "Pool: FORBIDDEN");
-        enabled = true;
+        _enabled = true;
     }
 
     /** @notice Disable pool for staking and loans
      * The Citadel factory called this function as owner of the pool
      */
-    function disable() public override {
+    function disable() public {
         require(msg.sender == _owner, "Pool: FORBIDDEN");
-        enabled = false;
+        _enabled = false;
     }
 
     /**
      * @notice Get accounts available rewards
      */
-    function availableReward(address user)
-        public
-        view
-        override
-        returns (uint256)
-    {
+    function availableReward(address user) public view returns (uint256) {
         Stake storage account = userStaked[user];
         uint256 available_reward =
-            account.totalStaked.mul(tps).div(10**_decimals);
+            account.totalStaked.mul(_tps).div(10**_decimals);
         if (!account.signMissedProfit) {
             available_reward = available_reward.sub(account.missedProfit);
         } else {
@@ -480,10 +499,10 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     /**
      * @notice Get accounts available rewards
      */
-    function availableCtl(address user) public view override returns (uint256) {
+    function availableCtl(address user) public view returns (uint256) {
         Stake storage account = userStaked[user];
         uint256 available_reward =
-            account.totalStaked.mul(ctlTps).div(10**_decimals);
+            account.totalStaked.mul(_ctlTps).div(10**_decimals);
         if (!account.signMissedCtl) {
             available_reward = available_reward.sub(account.missedCtl);
         } else {
@@ -498,61 +517,66 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 premiumCoeff_,
         uint256 tokensPerBlock_,
         bool enabled_
-    ) public override {
+    ) public {
         require(hasRole(ADMIN_ROLE, msg.sender), "Pool: Caller is not a admin");
-        if (apyTax_ != 0) {
-            apyTax = apyTax_;
+        if (_apyTax != 0) {
+            _apyTax = apyTax_;
         }
-        if (premiumCoeff_ != 0) {
-            premiumCoeff = premiumCoeff_;
+        if (_premiumCoeff != 0) {
+            _premiumCoeff = premiumCoeff_;
         }
         if (tokensPerBlock_ != 0) {
-            tokensPerBlock = tokensPerBlock_;
+            _tokensPerBlock = tokensPerBlock_;
         }
-        enabled = enabled_;
+        _enabled = enabled_;
     }
 
     /**
      * @notice Stake liquidity to pool
      * @param amount Funds amount
      */
-    function deposit(uint256 amount) public override onlyEnabled {
+    function deposit(uint256 amount) public onlyEnabled {
         require(amount > 0, "Pool: Amount is invalid");
 
         Stake storage account = userStaked[msg.sender];
-        uint256 premium = amount.mul(apyTax).div(10**_decimals);
+        uint256 premium = amount.mul(_apyTax).div(10**_decimals);
         uint256 staked = amount.sub(premium);
-        totalStaked = totalStaked.add(staked);
+        uint256 oldTotalStaked = _totalStaked;
+        _totalStaked = _totalStaked.add(staked);
         account.totalStaked = account.totalStaked.add(staked);
-        totalProfit = totalProfit.add(premium);
+        _totalProfit = _totalProfit.add(premium);
 
-        _addMissedProfit(msg.sender, staked.mul(tps).div(10**_decimals));
+        _addMissedProfit(msg.sender, staked.mul(_tps).div(10**_decimals));
 
-        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
+        _tps = _tps.add(premium.mul(10**_decimals).div(_totalStaked));
 
-        uint256 minted = ctlToken.mint();
+        uint256 minted = _ctlToken.mint();
         if (minted > 0) {
-            ctlTps = ctlTps.add(
-                (minted.sub(tokensPerBlock)).mul(10**_decimals).div(totalStaked)
+            _ctlTps = _ctlTps.add(
+                (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
+                    oldTotalStaked
+                )
             );
-            _addMissedCtl(msg.sender, staked.mul(ctlTps).div(10**_decimals));
-            ctlTps = ctlTps.add(
-                tokensPerBlock.mul(10**_decimals).div(totalStaked)
+            _addMissedCtl(msg.sender, staked.mul(_ctlTps).div(10**_decimals));
+            _ctlTps = _ctlTps.add(
+                _tokensPerBlock.mul(10**_decimals).div(_totalStaked)
             );
         }
-        prevMintingBlock = block.number;
+        _prevMintingBlock = block.number;
 
-        _updateTop(topProviders, account.totalStaked);
+        _updateTop(_topProviders, account.totalStaked);
 
-        token.transferFrom(msg.sender, address(this), amount);
-        _mint(msg.sender, staked);
-        emit Deposited(block.timestamp, msg.sender, token, staked);
+        _mint(msg.sender, staked); //Mint and charge LP-tokens
+
+        _token.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Deposited(block.timestamp, msg.sender, staked);
         emit totalHistory(
             block.timestamp,
             msg.sender,
-            totalStaked,
-            borrowed,
-            totalProfit
+            _totalStaked,
+            _borrowed,
+            _totalProfit
         );
     }
 
@@ -560,50 +584,45 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Withdraw funds from pool
      * @param amount Funds amount
      */
-    function withdraw(uint256 amount) public override onlyEnabled {
+    function withdraw(uint256 amount) public onlyEnabled {
         Stake storage account = userStaked[msg.sender];
         require(
             amount > 0 && amount <= account.totalStaked,
             "Pool: Amount is invalid"
         );
-        totalStaked = totalStaked.sub(amount);
+        uint256 oldTotalStaked = _totalStaked;
+        _totalStaked = _totalStaked.sub(amount);
         account.totalStaked = account.totalStaked.sub(amount);
-        _subMissedProfit(msg.sender, amount.mul(tps).div(10**_decimals));
+        _subMissedProfit(msg.sender, amount.mul(_tps).div(10**_decimals));
 
-        if (totalStaked > 0) {
-            uint256 minted = ctlToken.mint();
-            if (minted > 0) {
-                ctlTps = ctlTps.add(
-                    (minted.sub(tokensPerBlock)).mul(10**_decimals).div(
-                        totalStaked
-                    )
-                );
-                _subMissedCtl(
-                    msg.sender,
-                    amount.mul(ctlTps).div(10**_decimals)
-                );
-                ctlTps = ctlTps.add(
-                    tokensPerBlock.mul(10**_decimals).div(totalStaked)
+        uint256 minted = _ctlToken.mint();
+        if (minted > 0) {
+            _ctlTps = _ctlTps.add(
+                (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
+                    oldTotalStaked
+                )
+            );
+            _subMissedCtl(msg.sender, amount.mul(_ctlTps).div(10**_decimals));
+            if (_totalStaked > 0) {
+                _ctlTps = _ctlTps.add(
+                    _tokensPerBlock.mul(10**_decimals).div(_totalStaked)
                 );
             }
-            prevMintingBlock = block.number;
-        } else {
-            //stop minting
-            _subMissedCtl(msg.sender, amount.mul(ctlTps).div(10**_decimals));
         }
+        _prevMintingBlock = block.number;
 
-        _updateTop(topProviders, account.totalStaked);
+        _updateTop(_topProviders, account.totalStaked);
 
-        token.transfer(msg.sender, amount);
         _burn(msg.sender, amount);
+        _token.safeTransfer(msg.sender, amount);
 
-        emit Withdrew(block.timestamp, msg.sender, token, amount);
+        emit Withdrew(block.timestamp, msg.sender, amount);
         emit totalHistory(
             block.timestamp,
             msg.sender,
-            totalStaked,
-            borrowed,
-            totalProfit
+            _totalStaked,
+            _borrowed,
+            _totalProfit
         );
     }
 
@@ -611,25 +630,25 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Claim all rewards from pool in original tokens
      * @param spender Spender address
      */
-    function claimRewards(address spender) public override {
+    function claimRewards(address spender) public {
         require(
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
-        if (enabled) {
+        if (_enabled) {
             uint256 amount = availableReward(spender);
             if (amount > 0) {
                 Stake storage account = userStaked[spender];
                 account.claimedReward = account.claimedReward.add(amount);
-                token.transfer(spender, amount);
+                _token.safeTransfer(spender, amount);
 
-                emit Rewarded(block.timestamp, spender, token, amount);
+                emit Rewarded(block.timestamp, spender, amount);
                 emit totalHistory(
                     block.timestamp,
                     spender,
-                    totalStaked,
-                    borrowed,
-                    totalProfit
+                    _totalStaked,
+                    _borrowed,
+                    _totalProfit
                 );
             }
         }
@@ -639,30 +658,25 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
      * @notice Claim all rewards from pool in CTL tokens
      * @param spender Spender address
      */
-    function claimCtl(address spender) public override {
+    function claimCtl(address spender) public {
         require(
             msg.sender == _owner,
             "Pool: This function must called from factory"
         );
-        if (enabled) {
-            if (totalStaked > 0) {
-                uint256 minted = ctlToken.mint();
-                ctlTps = ctlTps.add(minted.mul(10**_decimals).div(totalStaked));
+        if (_enabled) {
+            if (_totalStaked > 0) {
+                uint256 minted = _ctlToken.mint();
+                _ctlTps = _ctlTps.add(
+                    minted.mul(10**_decimals).div(_totalStaked)
+                );
+                _prevMintingBlock = block.number;
             }
             uint256 amount = availableCtl(spender);
             if (amount > 0) {
                 Stake storage account = userStaked[spender];
                 account.claimedCtl = account.claimedCtl.add(amount);
-
-                ctlToken.transfer(spender, amount);
-                emit Rewarded(block.timestamp, spender, ctlToken, amount);
-                emit totalHistory(
-                    block.timestamp,
-                    spender,
-                    totalStaked,
-                    borrowed,
-                    totalProfit
-                );
+                IERC20(address(_ctlToken)).safeTransfer(spender, amount);
+                emit Rewarded(block.timestamp, spender, amount);
             }
         }
     }
@@ -678,49 +692,50 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
         uint256 amount,
         uint256 premium,
         bytes calldata params
-    ) public override onlyEnabled {
+    ) public onlyEnabled {
         require(
             hasRole(BORROWER_ROLE, msg.sender),
             "Pool: Caller is not a borrower"
         );
         Loan storage loan = userLoaned[msg.sender];
-        require(!loan.lock, "Pool: reentrancy guard");
-        require(amount > 0 && amount <= totalStaked, "Pool: Amount is invalid");
+        require(!_lock, "Pool: reentrancy guard");
         require(
-            premium.mul(10**_decimals).div(amount) >= premiumCoeff,
+            amount > 0 && amount <= _totalStaked,
+            "Pool: Amount is invalid"
+        );
+        require(
+            premium.mul(10**_decimals).div(amount) >= _premiumCoeff,
             "Pool: Profit amount is invalid"
         );
-        loan.lock = true;
-        borrowed = borrowed.add(amount);
+        _lock = true;
+        _borrowed = _borrowed.add(amount);
         loan.borrowed = loan.borrowed.add(amount);
-        totalProfit = totalProfit.add(premium);
-        tps = tps.add(premium.mul(10**_decimals).div(totalStaked));
-        returned = returned.add(amount);
-        loan.returned = loan.returned.add(amount);
         loan.profit = loan.profit.add(premium);
+        _totalProfit = _totalProfit.add(premium);
+        _tps = _tps.add(premium.mul(10**_decimals).div(_totalStaked));
 
-        token.transfer(receiver, amount);
+        uint256 minted = _ctlToken.mint();
+        _ctlTps = _ctlTps.add(minted.mul(10**_decimals).div(_totalStaked));
+        _prevMintingBlock = block.number;
+
+        _token.safeTransfer(receiver, amount);
         IFlashLoanReceiver(receiver).executeOperation(
-            token,
+            _token,
             amount,
             premium,
             msg.sender,
             params
         );
-        token.transferFrom(receiver, address(this), amount.add(premium));
+        _token.safeTransferFrom(receiver, address(this), amount.add(premium));
 
-        uint256 minted = ctlToken.mint();
-        ctlTps = ctlTps.add(minted.mul(10**_decimals).div(totalStaked));
-
-        loan.lock = false;
-
+        _lock = false;
         emit FlashLoan(block.timestamp, msg.sender, receiver, amount, premium);
         emit totalHistory(
             block.timestamp,
             msg.sender,
-            totalStaked,
-            borrowed,
-            totalProfit
+            _totalStaked,
+            _borrowed,
+            _totalProfit
         );
     }
 

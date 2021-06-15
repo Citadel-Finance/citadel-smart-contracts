@@ -4,10 +4,12 @@ pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IBEP20.sol";
-import "./CitadelPool.sol";
+import "./interfaces/ICTLToken.sol";
+import "./interfaces/ICitadelPool.sol";
 
-contract CTLToken is IBEP20, AccessControl {
+contract CTLToken is IERC20, IBEP20, ICTLToken, AccessControl {
     using SafeMath for uint256;
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -16,18 +18,18 @@ contract CTLToken is IBEP20, AccessControl {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
-    uint256 public maxTotalSupply;
     uint256 private _decimals;
     string private _symbol;
     string private _name;
-    bool public mintDisabled;
+    bool private _mintDisabled;
     address private _owner;
+    uint256 private _startBlock;
 
     constructor(
         string memory name_,
         string memory symbol_,
         uint256 decimals_,
-        uint256 maxTotalSupply_
+        uint256 startBlock_
     ) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(ADMIN_ROLE, msg.sender);
@@ -36,55 +38,21 @@ contract CTLToken is IBEP20, AccessControl {
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        maxTotalSupply = maxTotalSupply_;
         _owner = msg.sender;
-    }
-
-    /**
-     * @dev Returns the bep token owner.
-     */
-    function getOwner() public view virtual override returns (address) {
-        return _owner;
-    }
-
-    /**
-     * @dev Returns the token decimals.
-     */
-    function decimals() public view virtual override returns (uint256) {
-        return _decimals;
-    }
-
-    /**
-     * @dev Returns the token symbol.
-     */
-    function symbol() public view virtual override returns (string memory) {
-        return _symbol;
-    }
-
-    /**
-     * @dev Returns the token name.
-     */
-    function name() public view virtual override returns (string memory) {
-        return _name;
+        _startBlock = startBlock_;
     }
 
     /**
      * @dev See {BEP20-totalSupply}.
      */
-    function totalSupply() public view virtual override returns (uint256) {
+    function totalSupply() public view override returns (uint256) {
         return _totalSupply;
     }
 
     /**
      * @dev See {BEP20-balanceOf}.
      */
-    function balanceOf(address account)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
 
@@ -98,7 +66,6 @@ contract CTLToken is IBEP20, AccessControl {
      */
     function transfer(address recipient, uint256 amount)
         public
-        virtual
         override
         returns (bool)
     {
@@ -112,7 +79,6 @@ contract CTLToken is IBEP20, AccessControl {
     function allowance(address owner, address spender)
         public
         view
-        virtual
         override
         returns (uint256)
     {
@@ -128,7 +94,6 @@ contract CTLToken is IBEP20, AccessControl {
      */
     function approve(address spender, uint256 amount)
         public
-        virtual
         override
         returns (bool)
     {
@@ -152,7 +117,7 @@ contract CTLToken is IBEP20, AccessControl {
         address sender,
         address recipient,
         uint256 amount
-    ) public virtual override returns (bool) {
+    ) public override returns (bool) {
         _transfer(sender, recipient, amount);
         _approve(
             sender,
@@ -163,6 +128,34 @@ contract CTLToken is IBEP20, AccessControl {
             )
         );
         return true;
+    }
+
+    /**
+     * @dev Returns the token name.
+     */
+    function name() public view override returns (string memory) {
+        return _name;
+    }
+
+    /**
+     * @dev Returns the token symbol.
+     */
+    function symbol() public view virtual override returns (string memory) {
+        return _symbol;
+    }
+
+    /**
+     * @dev Returns the token decimals.
+     */
+    function decimals() public view override returns (uint256) {
+        return _decimals;
+    }
+
+    /**
+     * @dev Returns the bep token owner.
+     */
+    function getOwner() public view override returns (address) {
+        return _owner;
     }
 
     /**
@@ -179,7 +172,6 @@ contract CTLToken is IBEP20, AccessControl {
      */
     function increaseAllowance(address spender, uint256 addedValue)
         public
-        virtual
         returns (bool)
     {
         _approve(
@@ -206,7 +198,6 @@ contract CTLToken is IBEP20, AccessControl {
      */
     function decreaseAllowance(address spender, uint256 subtractedValue)
         public
-        virtual
         returns (bool)
     {
         _approve(
@@ -221,38 +212,50 @@ contract CTLToken is IBEP20, AccessControl {
     }
 
     /**
-     * @dev Creates `amount` tokens and assigns them to `msg.sender`, increasing
-     * the total supply.
+     * @dev Create (currentBlockNumber - prevMintingBlock)*tokensPerBlock tokens and assigns
+     * them to pool, increasing the total supply.
      *
      * Requirements
      *
-     * - `msg.sender` must be the token owner
+     * - `msg.sender` must be an MINTER_ROLE role
      */
-    function mint() public virtual returns (uint256) {
-        require(hasRole(MINTER_ROLE, msg.sender), "CTL: FORBIDDEN");
-        if (mintDisabled) {
+    function mint() public override returns (uint256) {
+        require(
+            hasRole(MINTER_ROLE, msg.sender),
+            "CTL: there must be an minter role"
+        );
+        uint256 prevMintingBlock = ICitadelPool(msg.sender).prevMintingBlock();
+        if (_mintDisabled || block.number < _startBlock || block.number < prevMintingBlock) {
             return 0;
         }
         uint256 amount =
-            (block.number.sub(CitadelPool(msg.sender).prevMintingBlock())).mul(
-                CitadelPool(msg.sender).tokensPerBlock()
+            (block.number.sub(prevMintingBlock)).mul(
+                ICitadelPool(msg.sender).tokensPerBlock()
             );
-
-        if (_totalSupply.add(amount) >= maxTotalSupply) {
-            amount = maxTotalSupply.sub(_totalSupply);
-        }
         _mint(msg.sender, amount);
         return amount;
     }
 
-    function stopMint() public {
-        require(hasRole(ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
-        mintDisabled = true;
+    function startMint() public override returns (bool) {
+        require(
+            hasRole(ADMIN_ROLE, msg.sender),
+            "CTL: there must be an admin role"
+        );
+        _mintDisabled = false;
+        return _mintDisabled;
     }
 
-    function startMint() public {
-        require(hasRole(ADMIN_ROLE, msg.sender), "CTL: FORBIDDEN");
-        mintDisabled = false;
+    function stopMint() public override returns (bool) {
+        require(
+            hasRole(ADMIN_ROLE, msg.sender),
+            "CTL: there must be an admin role"
+        );
+        _mintDisabled = true;
+        return _mintDisabled;
+    }
+
+    function startBlock() public view override returns (uint256) {
+        return _startBlock;
     }
 
     /**
@@ -273,7 +276,7 @@ contract CTLToken is IBEP20, AccessControl {
         address sender,
         address recipient,
         uint256 amount
-    ) internal virtual {
+    ) internal {
         require(sender != address(0), "BEP20: transfer from the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
 
@@ -294,14 +297,9 @@ contract CTLToken is IBEP20, AccessControl {
      *
      * - `to` cannot be the zero address.
      */
-    function _mint(address account, uint256 amount) internal virtual {
+    function _mint(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: mint to the zero address");
         _totalSupply = _totalSupply.add(amount);
-        require(
-            _totalSupply < maxTotalSupply,
-            "CTL: Total supply reached maximum"
-        );
-
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
     }
@@ -317,7 +315,7 @@ contract CTLToken is IBEP20, AccessControl {
      * - `account` cannot be the zero address.
      * - `account` must have at least `amount` tokens.
      */
-    function _burn(address account, uint256 amount) internal virtual {
+    function _burn(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: burn from the zero address");
 
         _balances[account] = _balances[account].sub(
@@ -345,7 +343,7 @@ contract CTLToken is IBEP20, AccessControl {
         address owner,
         address spender,
         uint256 amount
-    ) internal virtual {
+    ) internal {
         require(owner != address(0), "BEP20: approve from the zero address");
         require(spender != address(0), "BEP20: approve to the zero address");
 
@@ -359,7 +357,7 @@ contract CTLToken is IBEP20, AccessControl {
      *
      * See {_burn} and {_approve}.
      */
-    function _burnFrom(address account, uint256 amount) internal virtual {
+    function _burnFrom(address account, uint256 amount) internal {
         _burn(account, amount);
         _approve(
             account,

@@ -6,40 +6,40 @@ pragma experimental ABIEncoderV2;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
-import "./interfaces/IBEP20.sol";
 import "./CitadelPool.sol";
-import "./CTLToken.sol";
 
 contract CitadelFactory is AccessControl {
     using Address for address;
     using SafeMath for uint256;
 
-    struct Pools {
-        CitadelPool pool;
-        IBEP20 token;
-    }
-
     struct PoolInfo {
         CitadelPool pool;
-        IBEP20 token;
+        address token;
         bool enabled;
     }
 
-    struct PoolsRewardInfo {
+    struct PoolRewards {
         CitadelPool pool;
         uint256 decimals;
         string symbol;
         uint256 availableReward;
         uint256 availableCtl;
         bool isAdmin;
+        bool isBorrower;
     }
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    CTLToken public ctlToken;
-    mapping(IBEP20 => CitadelPool) public pools;
-    Pools[] _poolList;
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
-    constructor(CTLToken ctlToken_) {
+    /// @dev CTL-token address
+    address public ctlToken;
+
+    /// @dev
+    mapping(address => CitadelPool) public pools;
+    address[] _poolList;
+
+    constructor(address ctlToken_) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(ADMIN_ROLE, msg.sender);
         _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
@@ -47,8 +47,7 @@ contract CitadelFactory is AccessControl {
     }
 
     function addPool(
-        IBEP20 token,
-        uint256 startTime,
+        address token,
         uint256 tokensPerBlock,
         uint256 apyTax,
         uint256 premiumCoeff,
@@ -60,23 +59,18 @@ contract CitadelFactory is AccessControl {
         );
         require(
             pools[token] == CitadelPool(0),
-            "CitadelFactory: LP for this token already exist"
+            "CitadelFactory: Pool for this token already exist"
         );
         require(
-            address(token).isContract(),
+            token.isContract(),
             "CitadelFactory: Given address is not contract"
         );
-
-        if (startTime == 0) {
-            startTime = block.timestamp;
-        }
 
         bytes32 salt = keccak256(abi.encodePacked(token));
         CitadelPool pool =
             new CitadelPool{salt: salt}(
                 token,
                 ctlToken,
-                startTime,
                 apyTax,
                 premiumCoeff,
                 tokensPerBlock,
@@ -84,12 +78,12 @@ contract CitadelFactory is AccessControl {
                 enabled
             );
         pools[token] = pool;
-        _poolList.push(Pools({pool: pool, token: token}));
-        ctlToken.grantRole(ctlToken.MINTER_ROLE(), address(pool));
+        _poolList.push(token);
+        AccessControl(ctlToken).grantRole(MINTER_ROLE, address(pool));
         emit Created(token, pool);
     }
 
-    function disablePool(IBEP20 token) public {
+    function disablePool(address token) public {
         require(
             hasRole(ADMIN_ROLE, msg.sender),
             "CitadelFactory: Caller is not a admin"
@@ -97,20 +91,12 @@ contract CitadelFactory is AccessControl {
         pools[token].disable();
     }
 
-    function enablePool(IBEP20 token) public {
+    function enablePool(address token) public {
         require(
             hasRole(ADMIN_ROLE, msg.sender),
             "CitadelFactory: Caller is not a admin"
         );
         pools[token].enable();
-    }
-
-    /**
-     * @notice Return true if outside BEP20 token is allowed for pool
-     * @param token Address of BEP20 token
-     */
-    function isPoolEnabled(IBEP20 token) public view returns (bool) {
-        return pools[token].enabled();
     }
 
     function isAdmin(address user) public view returns (bool) {
@@ -124,9 +110,9 @@ contract CitadelFactory is AccessControl {
         PoolInfo[] memory _poolInfo = new PoolInfo[](_poolList.length);
         for (uint256 i = 0; i < _poolList.length; i++) {
             _poolInfo[i] = PoolInfo({
-                pool: _poolList[i].pool,
-                token: _poolList[i].token,
-                enabled: _poolList[i].pool.enabled()
+                pool: pools[_poolList[i]],
+                token: _poolList[i],
+                enabled: pools[_poolList[i]].enabled()
             });
         }
         return _poolInfo;
@@ -135,18 +121,18 @@ contract CitadelFactory is AccessControl {
     function poolsAvailableReward(address user)
         public
         view
-        returns (PoolsRewardInfo[] memory)
+        returns (PoolRewards[] memory)
     {
-        PoolsRewardInfo[] memory _poolRewards =
-            new PoolsRewardInfo[](_poolList.length);
+        PoolRewards[] memory _poolRewards = new PoolRewards[](_poolList.length);
         for (uint256 i = 0; i < _poolList.length; i++) {
-            _poolRewards[i] = PoolsRewardInfo({
-                pool: _poolList[i].pool,
-                decimals: _poolList[i].pool.decimals(),
-                symbol: _poolList[i].pool.symbol(),
-                availableReward: _poolList[i].pool.availableReward(user),
-                availableCtl: _poolList[i].pool.availableCtl(user),
-                isAdmin: _poolList[i].pool.hasRole(ADMIN_ROLE, user)
+            _poolRewards[i] = PoolRewards({
+                pool: pools[_poolList[i]],
+                decimals: pools[_poolList[i]].decimals(),
+                symbol: pools[_poolList[i]].symbol(),
+                availableReward: pools[_poolList[i]].availableReward(user),
+                availableCtl: pools[_poolList[i]].availableCtl(user),
+                isAdmin: pools[_poolList[i]].hasRole(ADMIN_ROLE, user),
+                isBorrower: pools[_poolList[i]].hasRole(BORROWER_ROLE, user)
             });
         }
         return _poolRewards;
@@ -156,7 +142,7 @@ contract CitadelFactory is AccessControl {
         uint256 availableCtl;
         for (uint256 i = 0; i < _poolList.length; i++) {
             availableCtl = availableCtl.add(
-                _poolList[i].pool.availableCtl(user)
+                pools[_poolList[i]].availableCtl(user)
             );
         }
         return availableCtl;
@@ -164,10 +150,10 @@ contract CitadelFactory is AccessControl {
 
     function claimAllRewards() public {
         for (uint256 i = 0; i < _poolList.length; i++) {
-            _poolList[i].pool.claimRewards(msg.sender);
-            _poolList[i].pool.claimCtl(msg.sender);
+            pools[_poolList[i]].claimRewards(msg.sender);
+            pools[_poolList[i]].claimCtl(msg.sender);
         }
     }
 
-    event Created(IBEP20 token, CitadelPool pool);
+    event Created(address token, CitadelPool pool);
 }

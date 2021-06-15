@@ -3,8 +3,8 @@
 pragma solidity ^0.7.0;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IFlashLoanReceiver.sol";
-import "../interfaces/IBEP20.sol";
 
 /** 
     !!!
@@ -25,7 +25,7 @@ contract FlashLoanReceiver is IFlashLoanReceiver {
         This function is called after your contract has received the flash loaned amount
      */
     function executeOperation(
-        IBEP20 token,
+        IERC20 token,
         uint256 amount,
         uint256 premium,
         address initiator,
