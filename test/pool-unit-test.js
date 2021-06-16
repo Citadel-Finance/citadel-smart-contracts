@@ -18,7 +18,7 @@ let user4;
 ethers.getSigners().then(val => {
   [liquidity_provider, lp_pool_owner, borrower, user1, user2, user3, user4] = val;
 });
-/*
+
 describe("Pool unit test", () => {
   let OutsideToken;
   let CTLToken;
@@ -40,7 +40,7 @@ describe("Pool unit test", () => {
     CitadelPool = await ethers.getContractFactory("CitadelPool", lp_pool_owner);
     FLReceiver = await ethers.getContractFactory("FlashLoanReceiver", borrower);
 
-    outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18, parseEther(process.env.TOKEN_TOTAL_SUPPLY));
+    outside_token = await OutsideToken.deploy("OUTSIDE", "OUT", 18);
     await outside_token.deployed();
     await outside_token.connect(liquidity_provider).mint(parseEther('1000000'));
 
@@ -48,18 +48,15 @@ describe("Pool unit test", () => {
       process.env.TOKEN_NAME,
       process.env.TOKEN_SYMBOL,
       process.env.TOKEN_DECIMALS,
-      parseEther(process.env.TOKEN_TOTAL_SUPPLY)
+      0
     );
-    let bl_num = await hre.ethers.provider.send("eth_blockNumber");
-    let block = await hre.ethers.provider.send("eth_getBlockByNumber", [bl_num, false]);
-    start_time = block.timestamp-100;
 
     ctl_factory = await CitadelFactory.deploy(ctl_token.address);
     await ctl_factory.deployed();
 
     await ctl_token.grantRole(await ctl_token.ADMIN_ROLE(), ctl_factory.address);
 
-    await ctl_factory.addPool(outside_token.address, start_time, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
+    await ctl_factory.addPool(outside_token.address, tokensPerBlock, parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true);
     let lp_pool_addr = await ctl_factory.pools(outside_token.address);
     ctl_pool = await CitadelPool.attach(lp_pool_addr);
 
@@ -72,14 +69,15 @@ describe("Pool unit test", () => {
       expect(
         await ctl_pool.hasRole(await ctl_pool.ADMIN_ROLE(), lp_pool_owner.address)
       ).to.equal(true);
+      common_data = await ctl_pool.getCommonData();
       expect(
-        await ctl_pool.apyTax()
+        common_data.apyTax
       ).to.equal(parseEther('0.007'));
       expect(
-        await ctl_pool.premiumCoeff()
+        common_data.premiumCoeff
       ).to.equal(parseEther('0.012'));
       expect(
-        await ctl_pool.ctlToken()
+        common_data.ctlToken
       ).to.equal(ctl_token.address);
     });
   });
@@ -88,7 +86,7 @@ describe("Pool unit test", () => {
 
     it("Tokens whitelist may be set only admin: fail", async () => {
       try {
-        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, start_time, tokensPerBlock, parseEther('0.007'), parseEther('0.012'), true);
+        await ctl_factory.connect(liquidity_provider).addPool(outside_token.address, tokensPerBlock, parseEther('0.007'), parseEther('0.012'), true);
       }
       catch (e) {
         await expect(e.message).to.include('CitadelFactory: Caller is not a admin')
@@ -96,7 +94,7 @@ describe("Pool unit test", () => {
     });
 
     it("Add token to pool", async () => {
-      await expect(await ctl_factory.isPoolEnabled(outside_token.address)).to.be.equal(true);
+      await expect((await ctl_factory.allPools())[0].enabled).to.be.equal(true);
       lp_token_address = await ctl_factory.pools(outside_token.address);
       await expect(lp_token_address).to.be.properAddress;
 
@@ -119,7 +117,7 @@ describe("Pool unit test", () => {
       //Disable token
       await ctl_factory.connect(lp_pool_owner).disablePool(outside_token.address);
       await expect(
-        await ctl_factory.connect(lp_pool_owner).isPoolEnabled(outside_token.address)
+        (await ctl_factory.connect(lp_pool_owner).allPools())[0].enabled
       ).to.be.equal(false);
     });
   });
@@ -161,21 +159,17 @@ describe("Pool unit test", () => {
       //Outside token transfered to LP-pool address and add Staked
       await ctl_pool.connect(liquidity_provider).deposit(parseEther('1000'));
 
+      common_data = await ctl_pool.getCommonData();
+      user_data = await ctl_pool.getUserData(liquidity_provider.address);
+
       //Check staked
       await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).totalStaked
+        user_data.totalStaked
       ).to.be.equal(parseEther('993'));
 
       await expect(
-        await ctl_pool.connect(liquidity_provider).totalStaked()
+        common_data.totalStaked
       ).to.be.equal(parseEther('993'));
-
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
-      ).to.be.equal(false);
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
-      ).to.be.equal(parseEther('0'));
 
       //FIXME: EVM math?
       await expect(
@@ -229,22 +223,16 @@ describe("Pool unit test", () => {
       await ctl_pool.connect(liquidity_provider).deposit(parseEther('1000'));
 
       await ctl_pool.connect(liquidity_provider).withdraw(parseEther('100'));
+      common_data = await ctl_pool.getCommonData();
+      user_data = await ctl_pool.getUserData(liquidity_provider.address);
       //Check staked
       await expect(
-        await ctl_pool.totalStaked()
+        common_data.totalStaked
       ).to.be.equal(parseEther('893'));
 
       await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).totalStaked
+        user_data.totalStaked
       ).to.be.equal(parseEther('893'));
-
-      //check missed profit
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
-      ).to.be.equal(true);
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
-      ).to.be.equal(parseEther('0.7049345417925478'));
 
       // FIXME:
       // 893*7/993 = 6,295065458207452165 (6,295065458207451854 in EVM?) ethers
@@ -371,8 +359,9 @@ describe("Pool unit test", () => {
       );
 
       // Total profit = 0.007*1008 + 12 = 19.056
+      common_data = await ctl_pool.getCommonData();
       await expect(
-        await ctl_pool.totalProfit()
+        common_data.totalProfit
       ).to.be.equal(parseEther("19.056"));
     });
   });
@@ -385,25 +374,21 @@ describe("Pool unit test", () => {
       await outside_token.connect(liquidity_provider).approve(ctl_pool.address, parseEther('1000'));
       await ctl_pool.connect(liquidity_provider).deposit(parseEther('1000'));
 
+      common_data = await ctl_pool.getCommonData();
+      user_data = await ctl_pool.getUserData(liquidity_provider.address);
+
       await expect(
-        await ctl_pool.totalStaked()
+        common_data.totalStaked
       ).to.be.equal(parseEther("993"));
 
       await expect(
-        await ctl_pool.totalProfit()
+        common_data.totalProfit
       ).to.be.equal(parseEther("7"));
 
       //FIXME: EVM math
       await expect(
         await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(parseEther("6.999999999999999654"));
-
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
-      ).to.be.equal(false);
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
-      ).to.be.equal(0);
 
       // Grant role for borrower
       let borrower_role = await ctl_pool.BORROWER_ROLE();
@@ -418,25 +403,19 @@ describe("Pool unit test", () => {
         []
       );
 
+      common_data = await ctl_pool.getCommonData();
       await expect(
-        await ctl_pool.totalStaked()
+        common_data.totalStaked
       ).to.be.equal(parseEther("993"));
 
       await expect(
-        await ctl_pool.totalProfit()
+        common_data.totalProfit
       ).to.be.equal(parseEther("13"));
 
       //FIXME: EVM math
       await expect(
         await ctl_pool.connect(liquidity_provider).availableReward(liquidity_provider.address)
       ).to.be.equal(parseEther("12.99999999999999879"));
-
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).signMissedProfit
-      ).to.be.equal(false);
-      await expect(
-        (await ctl_pool.userStaked(liquidity_provider.address)).missedProfit
-      ).to.be.equal(0);
 
       await ctl_factory.connect(liquidity_provider).claimAllRewards();
 
@@ -445,4 +424,4 @@ describe("Pool unit test", () => {
       ).to.be.equal(0);
     })
   });
-});*/
+});

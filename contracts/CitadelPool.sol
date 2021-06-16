@@ -497,19 +497,19 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
     }
 
     /**
-     * @notice Get accounts available rewards
+     * @notice Get accounts available CTL tokens
      */
     function availableCtl(address user) public view returns (uint256) {
         Stake storage account = userStaked[user];
-        uint256 available_reward =
+        uint256 available_ctl =
             account.totalStaked.mul(_ctlTps).div(10**_decimals);
         if (!account.signMissedCtl) {
-            available_reward = available_reward.sub(account.missedCtl);
+            available_ctl = available_ctl.sub(account.missedCtl);
         } else {
-            available_reward = available_reward.add(account.missedCtl);
+            available_ctl = available_ctl.add(account.missedCtl);
         }
-        available_reward = available_reward.sub(account.claimedCtl);
-        return available_reward;
+        available_ctl = available_ctl.sub(account.claimedCtl);
+        return available_ctl;
     }
 
     function updatePool(
@@ -550,13 +550,20 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
 
         _tps = _tps.add(premium.mul(10**_decimals).div(_totalStaked));
 
+        //Don't minting CTL before staking
+        //First staker take CTL tokens minted for current block
+        if (oldTotalStaked == 0) {
+            _prevMintingBlock = block.number - 1;
+        }
         uint256 minted = _ctlToken.mint();
         if (minted > 0) {
-            _ctlTps = _ctlTps.add(
-                (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
-                    oldTotalStaked
-                )
-            );
+            if (oldTotalStaked > 0) {
+                _ctlTps = _ctlTps.add(
+                    (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
+                        oldTotalStaked
+                    )
+                );
+            }
             _addMissedCtl(msg.sender, staked.mul(_ctlTps).div(10**_decimals));
             _ctlTps = _ctlTps.add(
                 _tokensPerBlock.mul(10**_decimals).div(_totalStaked)
@@ -597,15 +604,28 @@ contract CitadelPool is ILPToken, ICitadelPool, AccessControl {
 
         uint256 minted = _ctlToken.mint();
         if (minted > 0) {
-            _ctlTps = _ctlTps.add(
-                (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
-                    oldTotalStaked
-                )
-            );
-            _subMissedCtl(msg.sender, amount.mul(_ctlTps).div(10**_decimals));
             if (_totalStaked > 0) {
                 _ctlTps = _ctlTps.add(
+                    (minted.sub(_tokensPerBlock)).mul(10**_decimals).div(
+                        oldTotalStaked
+                    )
+                );
+                _subMissedCtl(
+                    msg.sender,
+                    amount.mul(_ctlTps).div(10**_decimals)
+                );
+                _ctlTps = _ctlTps.add(
                     _tokensPerBlock.mul(10**_decimals).div(_totalStaked)
+                );
+            }
+            //last withdrawing user calculate ctlTps for all minted CTL tokens
+            else {
+                _ctlTps = _ctlTps.add(
+                    minted.mul(10**_decimals).div(oldTotalStaked)
+                );
+                _subMissedCtl(
+                    msg.sender,
+                    amount.mul(_ctlTps).div(10**_decimals)
                 );
             }
         }

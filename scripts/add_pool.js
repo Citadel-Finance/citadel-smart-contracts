@@ -9,7 +9,7 @@ async function main() {
     const CitadelPool = await hre.ethers.getContractFactory("CitadelPool");
     const factory = await CitadelFactory.attach("0xd79475203d892b26bEcEf6Cc3374B833e79ae2A2");
 
-    await factory.connect(owner).addPool("0x3281b72e55D1Dbe9D63395deDeAe0bbE8B4dC6d9", 1622726505, parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true, { gasLimit: 5000000 });
+    await factory.connect(owner).addPool("0x3281b72e55D1Dbe9D63395deDeAe0bbE8B4dC6d9", parseEther(process.env.POOL_TOKENS_PER_BLOCK), parseEther(process.env.POOL_APY_TAX), parseEther(process.env.POOL_PREMIUM_COEF), true, { gasLimit: 5000000 });
     let all_pools = await factory.connect(owner).allPools();
     console.log(all_pools);
     // const pool = await CitadelPool.attach(all_pools[0].pool);
