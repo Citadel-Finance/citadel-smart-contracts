@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "compile": "npx hardhat compile",
-    "test": "npx hardhat --network development test",
-    "console": "npx hardhat console --network development",
+    "test": "npx hardhat test --network ganache",
+    "console": "npx hardhat console --network ganache",
     "deploy-bsc-testnet": "npx hardhat run scripts/deploy.js --network bsctestnet",
     "deploy-bsc-mainnet": "npx hardhat run scripts/deploy.js --network"
   },

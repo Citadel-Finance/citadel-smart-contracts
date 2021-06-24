@@ -1,6 +1,6 @@
 const { parseEther } = require("ethers/lib/utils");
 
-task("withdraw", "Withdraw from pool")
+task("deposit", "Deposit funds to pool")
     .addParam("pool", "The number of pool")
     .addParam("amount", "The amount of funds")
     .setAction(async function (args, hre, runSuper) {
