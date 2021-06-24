@@ -7,11 +7,8 @@
     "compile": "npx hardhat compile",
     "test": "npx hardhat --network development test",
     "console": "npx hardhat console --network development",
-    "deploy-all-develop": "npx hardhat run --network development scripts/deploy_all.js",
-    "deposit-withdraw-develop": "npx hardhat run --network development scripts/deposit_withdraw.js",
-    "deploy-all-bsc_test": "npx hardhat run --network bsc_test_2 scripts/deploy_all.js",
-    "grant_role-bsc_test": "npx hardhat run --network bsc_test scripts/grant_admin_role.js",
-    "add_pool-bsc_test": "npx hardhat run --network bsc_test scripts/add_pool.js"
+    "deploy-bsc-testnet": "npx hardhat run scripts/deploy.js --network bsctestnet",
+    "deploy-bsc-mainnet": "npx hardhat run scripts/deploy.js --network"
   },
   "author": "",
   "license": "ISC",

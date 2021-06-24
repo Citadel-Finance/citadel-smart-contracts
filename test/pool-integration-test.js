@@ -117,8 +117,9 @@ describe("Pool integration tests", () => {
 
             //user1 check
             let user_data = await ctl_pool.getUserData(user1.address);
+            let user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
-                user_data.totalStaked
+                user_staked.totalStaked
             ).to.be.equal(parseEther('993'));
             await expect(
                 await user_data.balanceOf
@@ -129,6 +130,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             //user2 deposited
@@ -154,6 +161,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('993'));
@@ -166,12 +174,26 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("0"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
+
 
             //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("0"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             /// 1 day
             await hre.ethers.provider.send("evm_increaseTime", [86500]);
@@ -198,6 +220,7 @@ describe("Pool integration tests", () => {
 
             //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('1986'));
@@ -210,6 +233,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             /// start CTL minting
@@ -240,6 +269,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('3972'));
@@ -252,16 +282,37 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("821.428571428571425521"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("749.999999999999998251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("392.857142857142855943"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("785.714285714285711886"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             /// 5 day
@@ -279,21 +330,44 @@ describe("Pool integration tests", () => {
                 await ctl_token.balanceOf(ctl_pool.address)
             ).to.be.equal(parseEther("3000"));
 
+            //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("559.719855006361474626"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1320.840434980915569253"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1119.439710012722949252"));
-
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             await ctl_factory.connect(user2).claimAllRewards();
@@ -320,6 +394,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('2972'));
@@ -332,18 +407,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("726.582567155580093309"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1453.165134311160186618"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             /// 7 day
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
@@ -364,6 +459,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('2979'));
@@ -373,18 +469,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1435.638720948788653263"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("2120.615982908034661350"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1373.272511280069412248"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("2370.836469237882209742"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             //user1 claimed all rewards
@@ -411,6 +527,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('2979'));
@@ -423,16 +540,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("2120.615982908034661350"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1747.721295455450537032"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("2621.056955567729758134"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             /////////////////////////////////////////////
             /// 10 day
@@ -461,8 +600,9 @@ describe("Pool integration tests", () => {
                 await ctl_token.balanceOf(ctl_pool.address)
             ).to.be.equal(parseEther("8368.778251023180311164"));
 
-            //users
+            //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('979'));
@@ -475,18 +615,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1290.890285166139808348"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("1274.870839405432010650"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(true);
 
+            //user2
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("3371.657171309874189496"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("3706.230794547166290366"));
-
-
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             /// 11 day
             await hre.ethers.provider.send("evm_increaseTime", [86400]);
@@ -510,8 +670,9 @@ describe("Pool integration tests", () => {
                 await ctl_token.balanceOf(ctl_pool.address)
             ).to.be.equal(parseEther("10368.778251023180311164"));
 
-            //user1 check
+            //user4 check
             user_data = await ctl_pool.getUserData(user4.address);
+            user_staked = await ctl_pool.userStaked(user4.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('595.8'));
@@ -524,6 +685,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("91.201322556943423904"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("1212.222952361118052630"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
 
             //transfer LP tokens
@@ -549,6 +716,7 @@ describe("Pool integration tests", () => {
 
             //user3 check
             user_data = await ctl_pool.getUserData(user3.address);
+            user_staked = await ctl_pool.userStaked(user3.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('1370.34'));
@@ -561,9 +729,16 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("3207.638874192511271008"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user4 check
             user_data = await ctl_pool.getUserData(user4.address);
+            user_staked = await ctl_pool.userStaked(user4.address);
             await expect(
                 user_data.totalStaked
             ).to.be.equal(parseEther('1211.46'));
@@ -576,18 +751,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1623.515762504725244928"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("1212.222952361118052630"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
 
             //user1 check
             user_data = await ctl_pool.getUserData(user1.address);
+            user_staked = await ctl_pool.userStaked(user1.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("1755.506726202606840991"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("1274.870839405432010650"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(true);
 
             //user2 check
             user_data = await ctl_pool.getUserData(user2.address);
+            user_staked = await ctl_pool.userStaked(user2.address);
             await expect(
                 user_data.availableCtl
             ).to.be.equal(parseEther("4782.116888123336928020"));
+            await expect(
+                user_staked.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked.signMissedCtl
+            ).to.be.equal(false);
         });
 
 
@@ -620,6 +815,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             let user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            let user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('993', 8));
@@ -632,6 +828,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user2 deposited
             await outside_token_8.connect(user2).approve(ctl_pool_8.address, parseUnits('1000', 8));
@@ -656,6 +858,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('993', 8));
@@ -668,6 +871,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("0"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             /// 1 day
             await hre.ethers.provider.send("evm_increaseTime", [86500]);
@@ -693,6 +902,7 @@ describe("Pool integration tests", () => {
 
             //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('1986', 8));
@@ -705,6 +915,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
 
             /// 3 day
@@ -734,6 +950,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('3972', 8));
@@ -746,16 +963,36 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("821.428571428571425521"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("749.999999999999998251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("392.857142857142855943"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("785.714285714285711886"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             /// 5 day
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
@@ -772,20 +1009,44 @@ describe("Pool integration tests", () => {
                 await ctl_token.balanceOf(ctl_pool_8.address)
             ).to.be.equal(parseEther("3000"));
 
+            //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("559.719855006361474626"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
+            //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1320.840434980915569253"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1119.439710012722949252"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
 
             await ctl_factory.connect(user2).claimAllRewards();
@@ -812,6 +1073,7 @@ describe("Pool integration tests", () => {
 
             //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('2972', 8));
@@ -824,18 +1086,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("726.582567155580093309"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1453.165134311160186618"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             /// 7 day
             await hre.ethers.provider.send("evm_increaseTime", [2 * 86400]);
@@ -855,6 +1137,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('2979', 8));
@@ -864,20 +1147,41 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1435.638720948788653263"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("2120.615982908034661350"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1373.272511280069412248"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("2370.836469237882209742"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
 
+            //user1 claimed all rewards
             await ctl_factory.connect(user1).claimAllRewards();
             console.log("user1 claimed rewards:", await hre.ethers.provider.send("eth_blockNumber") / 1 - start_ctl_bl_num);
 
@@ -901,6 +1205,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('2979', 8));
@@ -911,21 +1216,38 @@ describe("Pool integration tests", () => {
                 user_data_8.availableReward
             ).to.be.equal(0);
             await expect(
-                user_data_8.availableReward
-            ).to.be.equal(0);
-            await expect(
                 user_data_8.availableCtl
             ).to.be.equal(0);
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("2120.615982908034661350"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1747.721295455450537032"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("2621.056955567729758134"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             /// 10 day
             await hre.ethers.provider.send("evm_increaseTime", [3 * 86400]);
@@ -954,6 +1276,7 @@ describe("Pool integration tests", () => {
 
             //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('979', 8));
@@ -966,16 +1289,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1290.890285166139808348"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("1274.870839405432010650"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(true);
 
+            //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("3371.657171309874189496"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
+            //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("3706.230794547166290366"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             /// 11 day
             await hre.ethers.provider.send("evm_increaseTime", [86400]);
@@ -999,8 +1344,9 @@ describe("Pool integration tests", () => {
                 await ctl_token.balanceOf(ctl_pool_8.address)
             ).to.be.equal(parseEther("10368.778251023180311164"));
 
-            //user1 check
+            //user4 check
             user_data_8 = await ctl_pool_8.getUserData(user4.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user4.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('595.8', 8));
@@ -1013,6 +1359,12 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("91.201322556943423904"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("1212.222952361118052630"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
 
             //transfer LP tokens
@@ -1036,6 +1388,7 @@ describe("Pool integration tests", () => {
 
             //user3 check
             user_data_8 = await ctl_pool_8.getUserData(user3.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user3.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('1370.34', 8));
@@ -1048,9 +1401,16 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("3207.638874192511271008"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(0);
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user4 check
             user_data_8 = await ctl_pool_8.getUserData(user4.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user4.address);
             await expect(
                 user_data_8.totalStaked
             ).to.be.equal(parseUnits('1211.46', 8));
@@ -1063,18 +1423,38 @@ describe("Pool integration tests", () => {
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1623.515762504725244928"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("1212.222952361118052630"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
 
             //user1 check
             user_data_8 = await ctl_pool_8.getUserData(user1.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user1.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("1755.506726202606840991"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("1274.870839405432010650"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(true);
 
             //user2 check
             user_data_8 = await ctl_pool_8.getUserData(user2.address);
+            user_staked_8 = await ctl_pool_8.userStaked(user2.address);
             await expect(
                 user_data_8.availableCtl
             ).to.be.equal(parseEther("4782.116888123336928020"));
+            await expect(
+                user_staked_8.missedCtl
+            ).to.be.equal(parseEther("354.373471442957847251"));
+            await expect(
+                user_staked_8.signMissedCtl
+            ).to.be.equal(false);
         });
     });
 });
